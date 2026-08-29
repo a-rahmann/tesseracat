@@ -1,0 +1,17 @@
+{
+  "name": "@tesseract/desktop-browser",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@tesseract/agent-runtime": "*",
+    "@tesseract/core-types": "*",
+    "@tesseract/mcp-schemas": "*",
+    "@tesseract/policy-engine": "*",
+    "@tesseract/task-state-db": "*"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core-types" },
+    { "path": "./packages/policy-engine" },
+    { "path": "./packages/task-state-db" },
+    { "path": "./packages/mcp-schemas" },
+    { "path": "./apps/agent-runtime" },
+    { "path": "./apps/extension" },
+    { "path": "./apps/desktop-browser" }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../../packages/core-types" },
+    { "path": "../../packages/policy-engine" },
+    { "path": "../../packages/task-state-db" }
+  ],
+  "include": ["src/**/*"]
+}
