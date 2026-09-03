@@ -58,6 +58,7 @@ export class DeterministicPolicyEngine {
     switch (category) {
       case 'READ_PAGE':
       case 'TAB_NAVIGATION':
+      case 'INTERACT_DOM':
         return {
           allowed: true,
           requiresApproval: false,

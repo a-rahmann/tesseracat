@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, session, shell, dialog } from 'electron';
 import path from 'path';
+import { spawn, ChildProcess } from 'child_process';
 import { AgentOrchestrator } from '../../agent-runtime/dist/index.js';
 import { PolicyContext, TaskStep } from '../../../packages/core-types/dist/index.js';
 
@@ -130,6 +131,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Automatically grant microphone and media permissions in Electron
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(true);
+  });
+
+  session.defaultSession.setPermissionCheckHandler(() => true);
+
   createWindow();
 
   app.on('activate', () => {
@@ -137,6 +145,36 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+// Intercept Hold-T key events from all guest webviews when browsing any website
+let webviewHoldStart = 0;
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'webview') {
+    contents.on('before-input-event', (event, input) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (input.key && input.key.toLowerCase() === 't' && !input.control && !input.meta && !input.alt) {
+          if (input.type === 'keyDown') {
+            if (!input.isAutoRepeat) {
+              webviewHoldStart = Date.now();
+            } else {
+              // Once repeating while holding, prevent it from inserting 't' into the guest webpage
+              if (Date.now() - webviewHoldStart > 350) {
+                event.preventDefault();
+              }
+            }
+          } else if (input.type === 'keyUp') {
+            webviewHoldStart = 0;
+          }
+
+          mainWindow.webContents.send('webview-t-event', {
+            type: input.type,
+            isAutoRepeat: input.isAutoRepeat,
+          });
+        }
+      }
+    });
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -215,3 +253,99 @@ ipcMain.handle('download-url-resource', async (_event, url: string) => {
     return { success: false, error: err.message };
   }
 });
+
+// Continuous Native Voice Recognition Engine (Windows System.Speech SAPI)
+let speechProcess: ChildProcess | null = null;
+
+function stopNativeVoiceListening() {
+  if (speechProcess) {
+    try {
+      speechProcess.kill();
+    } catch (_) {}
+    speechProcess = null;
+  }
+}
+
+function startNativeVoiceListening() {
+  stopNativeVoiceListening();
+
+  const psScript = `
+Add-Type -AssemblyName System.Speech
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$r = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+try {
+  $r.SetInputToDefaultAudioDevice()
+  $g = New-Object System.Speech.Recognition.DictationGrammar
+  $r.LoadGrammar($g)
+
+  Register-ObjectEvent -InputObject $r -EventName SpeechHypothesized -Action {
+    if ($EventArgs.Result.Text) {
+      [Console]::WriteLine("HYPOTHESIS:" + $EventArgs.Result.Text)
+    }
+  } | Out-Null
+
+  Register-ObjectEvent -InputObject $r -EventName SpeechRecognized -Action {
+    if ($EventArgs.Result.Text) {
+      [Console]::WriteLine("RECOGNIZED:" + $EventArgs.Result.Text)
+    }
+  } | Out-Null
+
+  $r.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)
+  [Console]::WriteLine("LISTENING_ACTIVE")
+
+  while ($true) {
+    Start-Sleep -Milliseconds 150
+  }
+} catch {
+  [Console]::WriteLine("ERROR:" + $_.Exception.Message)
+}
+`;
+
+  try {
+    speechProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psScript]);
+
+    speechProcess.stdout?.on('data', (chunk) => {
+      const text = chunk.toString();
+      const lines = text.split(/\\r?\\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('HYPOTHESIS:')) {
+          const val = trimmed.slice(11).trim();
+          if (mainWindow && !mainWindow.isDestroyed() && val) {
+            mainWindow.webContents.send('voice-hypothesis', val);
+          }
+        } else if (trimmed.startsWith('RECOGNIZED:')) {
+          const val = trimmed.slice(11).trim();
+          if (mainWindow && !mainWindow.isDestroyed() && val) {
+            mainWindow.webContents.send('voice-recognized', val);
+          }
+        }
+      }
+    });
+
+    speechProcess.stderr?.on('data', (err) => {
+      console.warn('Speech recognition warning:', err.toString());
+    });
+
+    speechProcess.on('exit', () => {
+      speechProcess = null;
+    });
+  } catch (err) {
+    console.error('Failed to start native voice recognition:', err);
+  }
+}
+
+ipcMain.handle('start-voice-listening', async () => {
+  startNativeVoiceListening();
+  return { success: true };
+});
+
+ipcMain.handle('stop-voice-listening', async () => {
+  stopNativeVoiceListening();
+  return { success: true };
+});
+
+app.on('will-quit', () => {
+  stopNativeVoiceListening();
+});
+

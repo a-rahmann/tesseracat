@@ -17,7 +17,8 @@ export type ActionCategory =
   | 'SEND_COMMUNICATION'
   | 'AUTHENTICATION'
   | 'PAYMENT'
-  | 'INSTALL_CONNECTOR';
+  | 'INSTALL_CONNECTOR'
+  | 'INTERACT_DOM';
 
 export interface PolicyRule {
   id: string;

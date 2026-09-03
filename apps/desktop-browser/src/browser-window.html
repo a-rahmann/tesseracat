@@ -4250,7 +4250,68 @@
           };
         }
 
-        // 5. Default / Standard Search & Navigation
+        // 5. Direct Play Command: "play interstellar theme", "play taylor swift", "play song ..."
+        if (lower.startsWith('play ') || lower.includes('play song') || lower.includes('play music') || lower.includes('play video')) {
+          let mediaQuery = rawGoal.replace(/^play\s+(?:song\s+|music\s+|video\s+)?/i, '').trim();
+          if (!mediaQuery) mediaQuery = 'top music hits';
+          return {
+            rawGoal,
+            type: 'YOUTUBE_RECOMMENDATION',
+            category: 'Music & Video Playback',
+            spokenIntro: `Playing ${mediaQuery} on YouTube.`,
+            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(mediaQuery)}`,
+            autoPlayMedia: true
+          };
+        }
+
+        // 6. Direct Website Opening: "open reddit", "go to github", "visit amazon", "open chatgpt"
+        const openMatch = lower.match(/^(?:open|go to|visit|launch)\s+([a-zA-Z0-9.-]+)/i);
+        if (openMatch) {
+          const site = openMatch[1].toLowerCase();
+          const siteMap = {
+            youtube: 'https://www.youtube.com',
+            reddit: 'https://www.reddit.com',
+            twitter: 'https://www.x.com',
+            x: 'https://www.x.com',
+            github: 'https://www.github.com',
+            google: 'https://www.google.com',
+            amazon: 'https://www.amazon.com',
+            netflix: 'https://www.netflix.com',
+            chatgpt: 'https://chatgpt.com',
+            openai: 'https://chatgpt.com',
+            spotify: 'https://open.spotify.com',
+            whatsapp: 'https://web.whatsapp.com',
+            discord: 'https://discord.com',
+            gmail: 'https://mail.google.com',
+            twitch: 'https://www.twitch.tv',
+            wikipedia: 'https://www.wikipedia.org',
+            linkedin: 'https://www.linkedin.com',
+            instagram: 'https://www.instagram.com',
+          };
+          let destUrl = siteMap[site];
+          if (!destUrl) {
+            destUrl = site.includes('.') ? `https://${site}` : `https://www.${site}.com`;
+          }
+          return {
+            rawGoal,
+            type: 'DIRECT_NAVIGATION',
+            spokenIntro: `Opening ${site}.`,
+            targetUrl: destUrl
+          };
+        }
+
+        // 7. Direct Search: "search for quantum computing", "search best laptops"
+        if (lower.startsWith('search for ') || lower.startsWith('search ') || lower.startsWith('google ')) {
+          const query = rawGoal.replace(/^(?:search for|search|google)\s+/i, '').trim();
+          return {
+            rawGoal,
+            type: 'SEARCH_TASK',
+            spokenIntro: `Searching web for "${query}".`,
+            targetUrl: 'https://www.google.com/search?q=' + encodeURIComponent(query)
+          };
+        }
+
+        // 8. Default / Standard Search & Navigation Fallback
         let step1Url = 'https://www.google.com/search?q=' + encodeURIComponent(rawGoal);
         if (lower.includes('discord')) step1Url = 'https://discord.com';
         else if (lower.includes('youtube')) step1Url = 'https://youtube.com';
@@ -4370,50 +4431,114 @@
       }
     }
 
-    // Speech-to-Text (STT) Voice Recognition Engine
+    // Speech-to-Text (STT) Voice Recognition Engine (Continuous Native + WebSpeech)
     let activeVoiceRecognizer = null;
+    let isListeningContinuously = false;
+    let nativeVoiceInitialized = false;
+
+    function stopVoiceToText() {
+      isListeningContinuously = false;
+      if (window.tesseractNative && window.tesseractNative.stopVoiceListening) {
+        try { window.tesseractNative.stopVoiceListening(); } catch (_) {}
+      }
+      if (activeVoiceRecognizer) {
+        try { activeVoiceRecognizer.abort(); } catch (_) {}
+        activeVoiceRecognizer = null;
+      }
+      const drawerWave = document.getElementById('drawer-voice-wave');
+      const drawerMic = document.getElementById('btn-drawer-mic');
+      const drawerInput = document.getElementById('gemini-drawer-input');
+      if (drawerWave) drawerWave.style.display = 'none';
+      if (drawerMic) drawerMic.classList.remove('active');
+      if (drawerInput && !drawerInput.value) {
+        drawerInput.placeholder = "Type your command and press Enter...";
+      }
+    }
+
     function startVoiceToText() {
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      stopVoiceToText();
+      isListeningContinuously = true;
+
       const drawerInput = document.getElementById('gemini-drawer-input');
       const drawerWave = document.getElementById('drawer-voice-wave');
       const drawerMic = document.getElementById('btn-drawer-mic');
 
-      if (!SpeechRec) {
-        if (drawerInput) drawerInput.placeholder = "Microphone SpeechRecognition unavailable in browser. Type your command...";
+      if (drawerWave) drawerWave.style.display = 'flex';
+      if (drawerMic) drawerMic.classList.add('active');
+      if (drawerInput) {
+        drawerInput.placeholder = "🎙️ Listening continuously... Speak your task or type on keyboard to stop";
+      }
+
+      // Check for native Windows SAPI Speech Recognition first (via Electron bridge)
+      if (window.tesseractNative && window.tesseractNative.startVoiceListening) {
+        window.tesseractNative.startVoiceListening().catch(err => console.warn('Native voice start error:', err));
+
+        if (!nativeVoiceInitialized) {
+          nativeVoiceInitialized = true;
+          window.tesseractNative.onVoiceHypothesis((text) => {
+            if (isListeningContinuously && text) {
+              const input = document.getElementById('gemini-drawer-input');
+              if (input) input.value = text;
+            }
+          });
+
+          window.tesseractNative.onVoiceRecognized((text) => {
+            if (isListeningContinuously && text && text.trim()) {
+              const input = document.getElementById('gemini-drawer-input');
+              if (input) input.value = text;
+              stopVoiceToText();
+              closeGeminiDrawer(true);
+              executeRealAgentTask(text.trim(), true);
+            }
+          });
+        }
         return;
       }
+
+      // Web Speech API Fallback
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        if (drawerInput) drawerInput.placeholder = "Microphone unavailable. Type your task and press Enter...";
+        return;
+      }
+
       try {
-        if (activeVoiceRecognizer) {
-          activeVoiceRecognizer.abort();
-        }
         activeVoiceRecognizer = new SpeechRec();
-        activeVoiceRecognizer.continuous = false;
+        activeVoiceRecognizer.continuous = true;
         activeVoiceRecognizer.interimResults = true;
         activeVoiceRecognizer.lang = 'en-US';
 
-        if (drawerWave) drawerWave.style.display = 'flex';
-        if (drawerMic) drawerMic.classList.add('active');
-        if (drawerInput) drawerInput.placeholder = "🎙️ Listening... Speak your task now (e.g. 'Play a video as I eat')";
-
         activeVoiceRecognizer.onresult = (e) => {
-          let transcript = '';
-          for (let i = 0; i < e.results.length; i++) {
-            transcript += e.results[i][0].transcript;
+          if (!isListeningContinuously) return;
+          let interimTranscript = '';
+          let finalTranscript = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              finalTranscript += e.results[i][0].transcript;
+            } else {
+              interimTranscript += e.results[i][0].transcript;
+            }
           }
-          if (drawerInput && transcript) {
-            drawerInput.value = transcript;
+
+          const currentText = finalTranscript || interimTranscript;
+          if (drawerInput && currentText) {
+            drawerInput.value = currentText;
+          }
+
+          if (finalTranscript.trim()) {
+            stopVoiceToText();
+            closeGeminiDrawer(true);
+            executeRealAgentTask(finalTranscript.trim(), true);
           }
         };
 
+        activeVoiceRecognizer.onerror = (e) => {
+          console.warn('Web speech error:', e.error);
+        };
+
         activeVoiceRecognizer.onend = () => {
-          if (drawerWave) drawerWave.style.display = 'none';
-          if (drawerMic) drawerMic.classList.remove('active');
-          if (drawerInput && drawerInput.value.trim()) {
-            const val = drawerInput.value.trim();
-            closeGeminiDrawer(true);
-            executeRealAgentTask(val, true);
-          } else if (drawerInput) {
-            drawerInput.placeholder = "🎙️ Speak your task (e.g. 'Play a video as I eat') or type...";
+          if (isListeningContinuously) {
+            try { activeVoiceRecognizer.start(); } catch (_) {}
           }
         };
 
@@ -4424,7 +4549,7 @@
     }
 
     // Gemini Drawer Helpers
-    function openGeminiDrawer() {
+    function openGeminiDrawerVisually() {
       const geminiBottomDrawer = document.getElementById('gemini-bottom-drawer');
       const geminiDrawerInput = document.getElementById('gemini-drawer-input');
       if (geminiBottomDrawer) {
@@ -4433,16 +4558,30 @@
       }
       if (geminiDrawerInput) {
         geminiDrawerInput.value = '';
-        geminiDrawerInput.focus();
       }
-      // Start real voice capture automatically upon opening drawer via long press
-      startVoiceToText();
+    }
+
+    function activateGeminiInputAndVoice(startVoice = true) {
+      const geminiDrawerInput = document.getElementById('gemini-drawer-input');
+      // Delay slightly so no physical keyup or repeat event is inserted into input
+      setTimeout(() => {
+        if (geminiDrawerInput) {
+          geminiDrawerInput.value = '';
+          geminiDrawerInput.focus();
+        }
+        if (startVoice) {
+          startVoiceToText();
+        }
+      }, 60);
+    }
+
+    function openGeminiDrawer() {
+      openGeminiDrawerVisually();
+      activateGeminiInputAndVoice(false);
     }
 
     function closeGeminiDrawer(andTransitionToSidebar = true) {
-      if (activeVoiceRecognizer) {
-        try { activeVoiceRecognizer.stop(); } catch (_) {}
-      }
+      stopVoiceToText();
       const geminiBottomDrawer = document.getElementById('gemini-bottom-drawer');
       if (!geminiBottomDrawer) return;
       if (andTransitionToSidebar) {
@@ -5161,30 +5300,8 @@
         }
 
         if (e.key.toLowerCase() === 't' && !e.metaKey && !e.ctrlKey && !e.altKey && !isInputFocused()) {
-          const geminiBottomDrawer = document.getElementById('gemini-bottom-drawer');
-          const holdIndicator = document.getElementById('hold-indicator');
-          const holdBarFill = document.getElementById('hold-bar-fill');
-
-          if (!holdTimer && geminiBottomDrawer && !geminiBottomDrawer.classList.contains('open')) {
-            holdStartTime = Date.now();
-            if (holdIndicator) holdIndicator.classList.add('active');
-            if (holdBarFill) holdBarFill.style.width = '0%';
-
-            function updateHoldProgress() {
-              const elapsed = Date.now() - holdStartTime;
-              const pct = Math.min((elapsed / HOLD_DURATION) * 100, 100);
-              if (holdBarFill) holdBarFill.style.width = `${pct}%`;
-
-              if (elapsed >= HOLD_DURATION) {
-                cancelHold();
-                openGeminiDrawer();
-              } else {
-                holdAnimFrame = requestAnimationFrame(updateHoldProgress);
-              }
-            }
-            holdAnimFrame = requestAnimationFrame(updateHoldProgress);
-            holdTimer = true;
-          }
+          e.preventDefault();
+          startTHold();
         } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
           openAiModal();
@@ -5192,36 +5309,92 @@
       });
 
       window.addEventListener('keyup', (e) => {
-        if (e.key.toLowerCase() === 't') cancelHold();
+        if (e.key.toLowerCase() === 't') {
+          endTHold();
+        }
       });
 
-      let holdTimer = null;
+      let holdTimer = false;
       let holdStartTime = 0;
       let holdAnimFrame = null;
+      let holdSummonTriggered = false;
       const HOLD_DURATION = 1200; // 1.2s responsive hold duration
 
-      function cancelHold() {
-        if (holdTimer) {
-          holdTimer = null;
-          if (holdAnimFrame) cancelAnimationFrame(holdAnimFrame);
-          const holdIndicator = document.getElementById('hold-indicator');
-          const holdBarFill = document.getElementById('hold-bar-fill');
-          if (holdIndicator) holdIndicator.classList.remove('active');
-          if (holdBarFill) holdBarFill.style.width = '0%';
+      function startTHold() {
+        const geminiBottomDrawer = document.getElementById('gemini-bottom-drawer');
+        if (geminiBottomDrawer && geminiBottomDrawer.classList.contains('open')) {
+          return;
         }
+        if (holdTimer || holdSummonTriggered) return;
+        holdTimer = true;
+        holdSummonTriggered = false;
+        holdStartTime = Date.now();
+
+        const holdIndicator = document.getElementById('hold-indicator');
+        const holdBarFill = document.getElementById('hold-bar-fill');
+        if (holdIndicator) holdIndicator.classList.add('active');
+        if (holdBarFill) holdBarFill.style.width = '0%';
+
+        function updateHoldProgress() {
+          if (!holdTimer) return;
+          const elapsed = Date.now() - holdStartTime;
+          const pct = Math.min((elapsed / HOLD_DURATION) * 100, 100);
+          if (holdBarFill) holdBarFill.style.width = `${pct}%`;
+
+          if (elapsed >= HOLD_DURATION) {
+            holdSummonTriggered = true;
+            cancelHoldIndicatorOnly();
+            // Open drawer visually without focusing yet (prevents tttttt)
+            openGeminiDrawerVisually();
+
+            // Blur any active webview so keystrokes don't leak into webpage
+            const wv = document.getElementById('webview');
+            if (wv && typeof wv.blur === 'function') {
+              try { wv.blur(); } catch (_) {}
+            }
+          } else {
+            holdAnimFrame = requestAnimationFrame(updateHoldProgress);
+          }
+        }
+        holdAnimFrame = requestAnimationFrame(updateHoldProgress);
+      }
+
+      function cancelHoldIndicatorOnly() {
+        holdTimer = false;
+        if (holdAnimFrame) cancelAnimationFrame(holdAnimFrame);
+        const holdIndicator = document.getElementById('hold-indicator');
+        const holdBarFill = document.getElementById('hold-bar-fill');
+        if (holdIndicator) holdIndicator.classList.remove('active');
+        if (holdBarFill) holdBarFill.style.width = '0%';
+      }
+
+      function endTHold() {
+        cancelHoldIndicatorOnly();
+        if (holdSummonTriggered) {
+          holdSummonTriggered = false;
+          // The user physically released the button!
+          // Now cleanly activate the input and voice listener with 0 stray 't' characters!
+          activateGeminiInputAndVoice(true);
+        }
+      }
+
+      // Intercept webview hold-T when browsing on any page
+      if (window.tesseractNative && window.tesseractNative.onWebviewTEvent) {
+        window.tesseractNative.onWebviewTEvent((data) => {
+          if (data.type === 'keyDown') {
+            startTHold();
+          } else if (data.type === 'keyUp') {
+            endTHold();
+          }
+        });
       }
 
       document.getElementById('btn-close-gemini-drawer')?.addEventListener('click', () => closeGeminiDrawer(true));
 
       // Mic Button click in bottom drawer to toggle listening
       document.getElementById('btn-drawer-mic')?.addEventListener('click', () => {
-        if (activeVoiceRecognizer) {
-          try { activeVoiceRecognizer.stop(); } catch (_) {}
-          activeVoiceRecognizer = null;
-          const drawerWave = document.getElementById('drawer-voice-wave');
-          const drawerMic = document.getElementById('btn-drawer-mic');
-          if (drawerWave) drawerWave.style.display = 'none';
-          if (drawerMic) drawerMic.classList.remove('active');
+        if (isListeningContinuously) {
+          stopVoiceToText();
         } else {
           startVoiceToText();
         }
@@ -5229,15 +5402,23 @@
 
       document.getElementById('btn-submit-gemini-drawer')?.addEventListener('click', () => {
         const val = document.getElementById('gemini-drawer-input')?.value.trim();
+        stopVoiceToText();
         closeGeminiDrawer(true);
         if (val) executeRealAgentTask(val, true);
       });
 
-      document.getElementById('gemini-drawer-input')?.addEventListener('keydown', (e) => {
+      const drawerInput = document.getElementById('gemini-drawer-input');
+      drawerInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-          const val = document.getElementById('gemini-drawer-input')?.value.trim();
+          const val = drawerInput.value.trim();
+          stopVoiceToText();
           closeGeminiDrawer(true);
           if (val) executeRealAgentTask(val, true);
+        } else if (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Meta') {
+          // Immediately stop voice listening on first keyboard keypress and focus on typing!
+          if (isListeningContinuously) {
+            stopVoiceToText();
+          }
         }
       });
 

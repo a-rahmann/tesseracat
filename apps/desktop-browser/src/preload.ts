@@ -9,5 +9,16 @@ import { ipcRenderer } from 'electron';
   downloadUrlResource: (url: string) => ipcRenderer.invoke('download-url-resource', url),
   onDownload: (callback: (data: any) => void) => {
     ipcRenderer.on('download-event', (_evt, data) => callback(data));
+  },
+  onWebviewTEvent: (callback: (data: any) => void) => {
+    ipcRenderer.on('webview-t-event', (_evt, data) => callback(data));
+  },
+  startVoiceListening: () => ipcRenderer.invoke('start-voice-listening'),
+  stopVoiceListening: () => ipcRenderer.invoke('stop-voice-listening'),
+  onVoiceHypothesis: (callback: (text: string) => void) => {
+    ipcRenderer.on('voice-hypothesis', (_evt, text) => callback(text));
+  },
+  onVoiceRecognized: (callback: (text: string) => void) => {
+    ipcRenderer.on('voice-recognized', (_evt, text) => callback(text));
   }
 };
