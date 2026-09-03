@@ -4177,7 +4177,16 @@
       },
 
       resolveContextualGoal(rawGoal) {
-        // 1. Check for conversational continuity / follow-up first!
+        if (!rawGoal || !rawGoal.trim()) {
+          return {
+            rawGoal: '',
+            type: 'SEARCH_TASK',
+            spokenIntro: 'How can I help you?',
+            targetUrl: 'https://www.google.com'
+          };
+        }
+
+        // 1. Check for conversational continuity / follow-up first
         if (ConversationMemory.isFollowUp(rawGoal)) {
           const followUp = ConversationMemory.resolveFollowUp(rawGoal);
           if (followUp) {
@@ -4186,48 +4195,41 @@
           }
         }
 
-        const lower = rawGoal.toLowerCase();
+        const clean = rawGoal.trim();
+        const lower = clean.toLowerCase();
 
-        // 2. Meal / Relax Context: dynamically extract or search what the user wants to watch
-        if (lower.includes('eat') || lower.includes('food') || lower.includes('lunch') || lower.includes('dinner') || lower.includes('eating')) {
-          let cleanQuery = rawGoal
-            .replace(/(?:can you|please|i want to|just)?\s*(?:play|find|watch|put on)?\s*(?:a video|something|a movie)?\s*(?:as|while)?\s*(?:i am|i'm|im)?\s*(?:eating|having|eat)?\s*(?:food|lunch|dinner|breakfast|meal)?/gi, '')
+        // 2. Play / Watch / Listen Intent (YouTube Media Playback)
+        // Matches: "play Taylor Swift", "watch Interstellar trailer", "put on lofi beats", "listen to podcast", "play a video as I eat"
+        const isPlayIntent = /^(?:can you|please|i want to|just)?\s*(?:play|watch|listen to|put on|stream|show video|find video)?\b/i.test(clean)
+          || lower.includes('play song') || lower.includes('play music') || lower.includes('play video')
+          || lower.includes('as i eat') || lower.includes('while eating') || lower.includes('having lunch') || lower.includes('having dinner');
+
+        if (isPlayIntent) {
+          let mediaQuery = clean
+            .replace(/^(?:can you|please|i want to|just)?\s*(?:play|watch|listen to|put on|stream|show video|find video)?\s*(?:a video|something|a movie|some music|song|songs|music)?\s*(?:as|while)?\s*(?:i am|i'm|im)?\s*(?:eating|having|eat)?\s*(?:food|lunch|dinner|breakfast|meal)?/gi, '')
+            .replace(/^(?:on|from|in)\s+youtube/gi, '')
             .trim();
-          if (!cleanQuery) {
-            cleanQuery = 'interesting video to watch while eating';
+
+          if (!mediaQuery || mediaQuery.length < 2) {
+            mediaQuery = lower.includes('eat') || lower.includes('food') ? 'entertaining documentary' : 'top trending music hits';
           }
+
           return {
-            rawGoal,
+            rawGoal: clean,
             type: 'YOUTUBE_RECOMMENDATION',
-            category: 'Dynamic Video Playback',
-            spokenIntro: `Finding "${cleanQuery}" on YouTube for your meal. Enjoy!`,
-            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`,
+            category: 'Music & Video Playback',
+            spokenIntro: `Playing "${mediaQuery}" on YouTube.`,
+            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(mediaQuery)}`,
             autoPlayMedia: true
           };
         }
 
-        // 3. Music / Focus Context: dynamically construct query from user request
-        if (lower.includes('study') || lower.includes('focus') || lower.includes('chill') || lower.includes('relax')) {
-          let musicQuery = rawGoal
-            .replace(/(?:can you|please)?\s*(?:play|put on)?\s*(?:some|music for|songs for)?/gi, '')
-            .trim();
-          if (!musicQuery) musicQuery = 'relaxing focus beats';
-          return {
-            rawGoal,
-            type: 'YOUTUBE_RECOMMENDATION',
-            category: 'Music & Focus Playback',
-            spokenIntro: `Playing "${musicQuery}" on YouTube.`,
-            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(musicQuery)}`,
-            autoPlayMedia: true
-          };
-        }
-
-        // 4. Social / DM Checking Context: "check if Rahul texted on Instagram"
+        // 3. Social / DM Checking Intent
         if (lower.includes('instagram') || lower.includes('insta')) {
-          const nameMatch = rawGoal.match(/(?:check if|did|message from|texted by|from)\s+([a-zA-Z0-9_-]+)/i);
+          const nameMatch = clean.match(/(?:check if|did|message from|texted by|from)\s+([a-zA-Z0-9_-]+)/i);
           const contactName = nameMatch ? nameMatch[1] : '';
           return {
-            rawGoal,
+            rawGoal: clean,
             type: 'SOCIAL_DM_CHECK',
             platform: 'Instagram',
             contactName: contactName,
@@ -4239,81 +4241,74 @@
           };
         }
 
-        // 5. Direct Play Command: "play interstellar theme", "play taylor swift", "play song ..."
-        if (lower.startsWith('play ') || lower.includes('play song') || lower.includes('play music') || lower.includes('play video')) {
-          let mediaQuery = rawGoal.replace(/^play\s+(?:song\s+|music\s+|video\s+)?/i, '').trim();
-          if (!mediaQuery) mediaQuery = 'top music hits';
-          return {
-            rawGoal,
-            type: 'YOUTUBE_RECOMMENDATION',
-            category: 'Music & Video Playback',
-            spokenIntro: `Playing ${mediaQuery} on YouTube.`,
-            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(mediaQuery)}`,
-            autoPlayMedia: true
-          };
-        }
+        // 4. Open / Direct Site Navigation Intent
+        // Matches: "open reddit", "go to github", "visit amazon", "take me to chatgpt", "launch youtube", "reddit.com"
+        const siteMap = {
+          youtube: 'https://www.youtube.com',
+          yt: 'https://www.youtube.com',
+          reddit: 'https://www.reddit.com',
+          twitter: 'https://www.x.com',
+          x: 'https://www.x.com',
+          github: 'https://www.github.com',
+          google: 'https://www.google.com',
+          amazon: 'https://www.amazon.com',
+          netflix: 'https://www.netflix.com',
+          chatgpt: 'https://chatgpt.com',
+          openai: 'https://chatgpt.com',
+          spotify: 'https://open.spotify.com',
+          whatsapp: 'https://web.whatsapp.com',
+          discord: 'https://discord.com',
+          gmail: 'https://mail.google.com',
+          mail: 'https://mail.google.com',
+          twitch: 'https://www.twitch.tv',
+          wikipedia: 'https://www.wikipedia.org',
+          wiki: 'https://www.wikipedia.org',
+          linkedin: 'https://www.linkedin.com',
+          instagram: 'https://www.instagram.com',
+        };
 
-        // 6. Direct Website Opening: "open reddit", "go to github", "visit amazon", "open chatgpt"
-        const openMatch = lower.match(/^(?:open|go to|visit|launch)\s+([a-zA-Z0-9.-]+)/i);
+        const openMatch = lower.match(/^(?:can you|please)?\s*(?:open|go to|visit|launch|navigate to|take me to|head to)\s+([a-zA-Z0-9.-]+)/i);
         if (openMatch) {
-          const site = openMatch[1].toLowerCase();
-          const siteMap = {
-            youtube: 'https://www.youtube.com',
-            reddit: 'https://www.reddit.com',
-            twitter: 'https://www.x.com',
-            x: 'https://www.x.com',
-            github: 'https://www.github.com',
-            google: 'https://www.google.com',
-            amazon: 'https://www.amazon.com',
-            netflix: 'https://www.netflix.com',
-            chatgpt: 'https://chatgpt.com',
-            openai: 'https://chatgpt.com',
-            spotify: 'https://open.spotify.com',
-            whatsapp: 'https://web.whatsapp.com',
-            discord: 'https://discord.com',
-            gmail: 'https://mail.google.com',
-            twitch: 'https://www.twitch.tv',
-            wikipedia: 'https://www.wikipedia.org',
-            linkedin: 'https://www.linkedin.com',
-            instagram: 'https://www.instagram.com',
-          };
+          const site = openMatch[1].toLowerCase().replace(/\.com|\.org|\.net|\.io/g, '');
           let destUrl = siteMap[site];
           if (!destUrl) {
-            destUrl = site.includes('.') ? `https://${site}` : `https://www.${site}.com`;
+            destUrl = openMatch[1].includes('.') ? `https://${openMatch[1]}` : `https://www.${site}.com`;
           }
           return {
-            rawGoal,
+            rawGoal: clean,
             type: 'DIRECT_NAVIGATION',
             spokenIntro: `Opening ${site}.`,
             targetUrl: destUrl
           };
         }
 
-        // 7. Direct Search: "search for quantum computing", "search best laptops"
-        if (lower.startsWith('search for ') || lower.startsWith('search ') || lower.startsWith('google ')) {
-          const query = rawGoal.replace(/^(?:search for|search|google)\s+/i, '').trim();
-          return {
-            rawGoal,
-            type: 'SEARCH_TASK',
-            spokenIntro: `Searching web for "${query}".`,
-            targetUrl: 'https://www.google.com/search?q=' + encodeURIComponent(query)
-          };
+        // Check direct domain names or single word known sites
+        for (const [key, url] of Object.entries(siteMap)) {
+          if (lower === key || lower === `open ${key}` || lower === `go to ${key}`) {
+            return {
+              rawGoal: clean,
+              type: 'DIRECT_NAVIGATION',
+              spokenIntro: `Opening ${key}.`,
+              targetUrl: url
+            };
+          }
         }
 
-        // 8. Default / Standard Search & Navigation Fallback
-        let step1Url = 'https://www.google.com/search?q=' + encodeURIComponent(rawGoal);
-        if (lower.includes('discord')) step1Url = 'https://discord.com';
-        else if (lower.includes('youtube')) step1Url = 'https://youtube.com';
-        else if (lower.includes('whatsapp')) step1Url = 'https://web.whatsapp.com';
-        else if (lower.includes('github')) step1Url = 'https://github.com';
-        else if (lower.includes('gmail') || lower.includes('mail')) step1Url = 'https://mail.google.com';
+        // 5. Search / Question Intent
+        // Matches: "search for quantum computing", "find best laptops", "what is the capital of France", "how to code in Rust"
+        let searchQuery = clean
+          .replace(/^(?:can you|please)?\s*(?:search for|search|google|find|look up|tell me about|show me|where is|what is|who is|how to)\s+/i, '')
+          .trim();
+
+        if (!searchQuery) searchQuery = clean;
 
         return {
-          rawGoal,
-          type: 'GENERAL_TASK',
-          spokenIntro: `Executing your task: "${rawGoal}"`,
-          targetUrl: step1Url
+          rawGoal: clean,
+          type: 'SEARCH_TASK',
+          spokenIntro: `Searching for "${searchQuery}".`,
+          targetUrl: 'https://www.google.com/search?q=' + encodeURIComponent(searchQuery)
         };
+      }
       }
     };
 
@@ -4506,19 +4501,20 @@
 
         const bufferSize = 4096;
         whisperScriptNode = whisperAudioContext.createScriptProcessor(bufferSize, 1, 1);
+        const recordStartTime = Date.now();
 
         whisperScriptNode.onaudioprocess = (e) => {
           if (!isWhisperListening) return;
           const inputData = e.inputBuffer.getChannelData(0);
           whisperAudioChunks.push(new Float32Array(inputData));
 
-          // Voice Activity Detection (RMS energy)
+          // Voice Activity Detection (RMS energy) - lower threshold for better mic sensitivity
           let sum = 0;
           for (let i = 0; i < inputData.length; i++) {
             sum += inputData[i] * inputData[i];
           }
           const rms = Math.sqrt(sum / inputData.length);
-          if (rms > 0.015) {
+          if (rms > 0.003) {
             whisperLastSpeechTime = Date.now();
           }
         };
@@ -4526,14 +4522,20 @@
         source.connect(whisperScriptNode);
         whisperScriptNode.connect(whisperAudioContext.destination);
 
-        // Periodically check if speech ended (silence detected after user spoke)
+        // Periodically check if speech ended or max duration reached
         whisperAutoFinishTimer = setInterval(() => {
           if (!isWhisperListening) return;
-          // If user spoke and there has been 1.1s of silence, auto-transcribe!
-          if (whisperLastSpeechTime > 0 && Date.now() - whisperLastSpeechTime > 1100) {
+          const duration = Date.now() - recordStartTime;
+
+          // If speech was detected and 0.9s of silence followed, auto-transcribe!
+          if (whisperLastSpeechTime > 0 && Date.now() - whisperLastSpeechTime > 900) {
+            finishAndTranscribeWhisper();
+          } 
+          // Max duration fallback (7 seconds)
+          else if (duration > 7000) {
             finishAndTranscribeWhisper();
           }
-        }, 200);
+        }, 150);
 
       } catch (err) {
         console.warn('Microphone recording error:', err);
@@ -4582,7 +4584,22 @@
           return;
         }
 
-        const recognized = res.text.trim();
+        let recognized = res.text.trim();
+
+        // Filter common Whisper hallucination outputs on quiet audio
+        const lowerRec = recognized.toLowerCase();
+        if (
+          lowerRec.includes('[blank_audio]') ||
+          lowerRec.includes('(music)') ||
+          lowerRec.includes('subtitles by') ||
+          lowerRec.includes('thank you for watching') ||
+          lowerRec.includes('amara.org') ||
+          recognized === '.' ||
+          recognized === 'you'
+        ) {
+          if (drawerInput) drawerInput.placeholder = "Couldn't hear clearly. Hold [T] to try again or type below.";
+          return;
+        }
 
         // Show recognized text in drawer input
         if (drawerInput) drawerInput.value = recognized;
