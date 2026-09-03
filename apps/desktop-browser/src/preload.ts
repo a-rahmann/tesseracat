@@ -1,8 +1,8 @@
 import { ipcRenderer } from 'electron';
 
 (window as any).tesseractNative = {
-  executeTask: (profileId: string, goal: string) =>
-    ipcRenderer.invoke('execute-agent-task', { profileId, goal }),
+  executeTask: (profileId: string, goal: string, contextData?: any) =>
+    ipcRenderer.invoke('execute-agent-task', { profileId, goal, contextData }),
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
   getDownloadHistory: () => ipcRenderer.invoke('get-download-history'),
   openFilePath: (filePath: string) => ipcRenderer.invoke('open-file-path', filePath),

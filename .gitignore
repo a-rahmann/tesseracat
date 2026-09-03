@@ -4,3 +4,5 @@ dist/
 .env.*
 .vscode/
 .cache/
+.DS_Store
+*.tsbuildinfo

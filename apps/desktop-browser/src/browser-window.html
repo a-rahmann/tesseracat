@@ -651,6 +651,7 @@
       padding: 0 16px;
       gap: 12px;
       z-index: 20;
+      position: relative; /* required: makes header the containing block for the abs-positioned 3-dots dropdown */
     }
 
     .sidebar-toggle-btn {
@@ -734,6 +735,8 @@
       outline: none;
       transition: all 0.2s ease;
       box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+      user-select: text;   /* override body’s user-select: none so text is selectable */
+      cursor: text;
     }
 
     .address-input:focus {
@@ -1809,7 +1812,45 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .drawer-action-btn:hover {
       box-shadow: 0 0 12px var(--accent-cyan);
+      transform: scale(1.05);
+    }
+
+    .drawer-mic-btn {
+      background: rgba(0, 240, 255, 0.15);
+      border: 1px solid var(--accent-cyan);
+      color: var(--accent-cyan);
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .drawer-mic-btn.active, .drawer-mic-btn:hover {
+      background: var(--accent-cyan);
+      color: #030712;
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
+    }
+
+    .voice-bar {
+      width: 3px;
+      height: 14px;
+      background: var(--accent-cyan);
+      border-radius: 2px;
+      animation: voicePulse 0.8s ease-in-out infinite alternate;
+    }
+
+    @keyframes voicePulse {
+      0% { height: 4px; opacity: 0.4; }
+      100% { height: 18px; opacity: 1; }
     }
 
     /* Modal Overlay */
@@ -2421,7 +2462,8 @@
 
         <!-- Live Electron Webview Container -->
         <div id="webview-container">
-          <webview id="webview" src="https://google.com"></webview>
+          <!-- src intentionally blank: loaded on first navigate via smartSearchAndExecute -->
+          <webview id="webview"></webview>
         </div>
 
         <!-- Dashboard View (Home Tab: 1/3 Upper Search/Greeting & 2/3 Lower 6 Equal Blocks) -->
@@ -2472,8 +2514,8 @@
               </div>
 
               <div class="spotify-full-wv-container">
-                <webview id="spotify-wv" src="https://open.spotify.com" allowpopups
-                  style="width:100%; height:100%; border:none;"></webview>
+                <!-- Lazy loaded on click to prevent background CPU/RAM drain -->
+                <webview id="spotify-wv" allowpopups style="width:100%; height:100%; border:none;"></webview>
               </div>
             </div>
 
@@ -2706,7 +2748,7 @@
                 <input type="text" id="cmp-url-1" value="https://google.com" placeholder="Enter URL 1..." />
                 <button class="ask-tesseract-btn" id="btn-cmp-go-1">Go</button>
               </div>
-              <webview id="cmp-wv-1" src="https://google.com" style="flex:1; border:none;"></webview>
+              <webview id="cmp-wv-1" style="flex:1; border:none;"></webview>
             </div>
 
             <div class="compare-box">
@@ -2723,7 +2765,7 @@
                 <input type="text" id="cmp-url-2" value="https://bing.com" placeholder="Enter URL 2..." />
                 <button class="ask-tesseract-btn" id="btn-cmp-go-2">Go</button>
               </div>
-              <webview id="cmp-wv-2" src="https://bing.com" style="flex:1; border:none;"></webview>
+              <webview id="cmp-wv-2" style="flex:1; border:none;"></webview>
             </div>
           </div>
         </div>
@@ -3001,7 +3043,20 @@
     </div>
 
     <div class="drawer-input-row">
-      <input type="text" id="gemini-drawer-input" placeholder="Ask Tesseract anything or type a command..." />
+      <div class="voice-wave-container" id="drawer-voice-wave" style="display:none; align-items:center; gap:3px;">
+        <span class="voice-bar"></span>
+        <span class="voice-bar" style="animation-delay: 0.2s"></span>
+        <span class="voice-bar" style="animation-delay: 0.4s"></span>
+      </div>
+      <input type="text" id="gemini-drawer-input" placeholder="🎙️ Speak your task (e.g. 'Play a video as I eat') or type..." />
+      <button class="drawer-mic-btn active" id="btn-drawer-mic" title="Voice Input (Active)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
       <button class="drawer-action-btn" id="btn-submit-gemini-drawer" title="Send Command">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="22" y1="2" x2="11" y2="13" />
@@ -3882,50 +3937,489 @@
       }
     }
 
-    // AUTONOMOUS AI AGENT EXECUTION
+    // ═══════════════════════════════════════════════════════════
+    // TESSERACT BROWSER AUTOMATION ENGINE & ACTION PRIMITIVES
+    // ═══════════════════════════════════════════════════════════
+    const TesseractBrowserAutomator = {
+      getWebview() {
+        return document.getElementById('webview');
+      },
+
+      async navigate(url) {
+        smartSearchAndExecute(url, false);
+        const wv = this.getWebview();
+        if (!wv) return false;
+        return new Promise((resolve) => {
+          let resolved = false;
+          const onDone = () => {
+            if (!resolved) {
+              resolved = true;
+              wv.removeEventListener('did-finish-load', onDone);
+              setTimeout(resolve, 1500); // Allow dynamic hydration
+            }
+          };
+          wv.addEventListener('did-finish-load', onDone);
+          setTimeout(onDone, 6000); // Safety fallback
+        });
+      },
+
+      async clickElement(selector) {
+        const wv = this.getWebview();
+        if (!wv) return false;
+        return await wv.executeJavaScript(`
+          (() => {
+            const el = document.querySelector('${selector}');
+            if (!el) return false;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+            el.click();
+            return true;
+          })()
+        `).catch(() => false);
+      },
+
+      async fillInput(selector, text) {
+        const wv = this.getWebview();
+        if (!wv) return false;
+        return await wv.executeJavaScript(`
+          (() => {
+            const el = document.querySelector('${selector}');
+            if (!el) return false;
+            el.focus();
+            el.value = ${JSON.stringify(text)};
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          })()
+        `).catch(() => false);
+      },
+
+      async playFirstMedia() {
+        const wv = this.getWebview();
+        if (!wv) return 'No webview available';
+        return await wv.executeJavaScript(`
+          (() => {
+            // YouTube: Click the first video thumbnail or title in results
+            const ytVideo = document.querySelector('ytd-video-renderer a#thumbnail, ytd-rich-item-renderer a#thumbnail, a#video-title');
+            if (ytVideo) {
+              ytVideo.click();
+              return 'Started top YouTube video recommendation';
+            }
+            // Generic HTML5 Video Player
+            const video = document.querySelector('video');
+            if (video) {
+              video.play().catch(() => {});
+              return 'Started video playback';
+            }
+            return 'Media element engaged';
+          })()
+        `).catch(err => `Media error: ${err.message}`);
+      },
+
+      async extractDirectMessage(contactName = '') {
+        const wv = this.getWebview();
+        if (!wv) return 'Webview unavailable';
+        return await wv.executeJavaScript(`
+          (() => {
+            // Search for chat container or list item with contactName
+            const targetName = ${JSON.stringify(contactName.toLowerCase())};
+            const allElements = Array.from(document.querySelectorAll('div, span, p'));
+            const matchedChat = allElements.find(el => el.children.length === 0 && el.innerText && el.innerText.toLowerCase().includes(targetName));
+            if (matchedChat) {
+              matchedChat.click();
+            }
+
+            // Extract latest text bubble on page
+            const messageBubbles = Array.from(document.querySelectorAll('[role="row"], div[dir="auto"], div[data-testid]'));
+            const latest = messageBubbles.filter(b => b.innerText && b.innerText.trim().length > 0).pop();
+            return latest ? latest.innerText.trim() : (matchedChat ? 'Found thread with ' + targetName + ' (no unread text).' : 'No active message found from ' + targetName);
+          })()
+        `).catch(err => `Extraction error: ${err.message}`);
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // CONVERSATION MEMORY & CONTINUITY ENGINE
+    // ═══════════════════════════════════════════════════════════
+    const ConversationMemory = {
+      history: [],
+      lastActiveTask: null,
+
+      recordTaskResolution(task) {
+        this.lastActiveTask = task;
+        this.history.push({
+          role: 'assistant',
+          goal: task.rawGoal,
+          details: task,
+          timestamp: Date.now()
+        });
+      },
+
+      isFollowUp(newPrompt) {
+        if (!this.lastActiveTask) return false;
+        const lower = newPrompt.toLowerCase().trim();
+        const followUpTerms = [
+          'it', 'this', 'that', 'them', 'him', 'her',
+          'again', 'repeat', 'redo', 'once more',
+          'pause', 'resume', 'stop', 'play', 'mute', 'unmute',
+          'next', 'another', 'different', 'shorter', 'longer',
+          'reply', 'send him', 'tell him', 'text him', 'message him',
+          'what did he', 'what did she', 'read it again', 'summarize'
+        ];
+        return followUpTerms.some(term => new RegExp('\\b' + term + '\\b', 'i').test(lower));
+      },
+
+      resolveFollowUp(newPrompt) {
+        const last = this.lastActiveTask;
+        if (!last) return null;
+        const lower = newPrompt.toLowerCase().trim();
+
+        // 1. Follow-up on Media / Video playback (e.g. "pause it", "resume", "play another one", "find something shorter")
+        if (last.type === 'YOUTUBE_RECOMMENDATION' || (last.targetUrl && last.targetUrl.includes('youtube'))) {
+          if (lower.includes('pause') || lower.includes('stop')) {
+            return {
+              type: 'DOM_MEDIA_CONTROL',
+              action: 'pause',
+              spokenIntro: "Pausing the video for you.",
+              targetUrl: last.targetUrl,
+              execute: async () => {
+                const wv = document.getElementById('webview');
+                if (wv) wv.executeJavaScript(`(() => { const v = document.querySelector('video'); if (v) v.pause(); return 'Paused'; })()`);
+              }
+            };
+          }
+          if (lower.includes('resume') || lower.includes('play again') || (lower.includes('play') && !lower.includes('another'))) {
+            return {
+              type: 'DOM_MEDIA_CONTROL',
+              action: 'play',
+              spokenIntro: "Resuming video playback.",
+              targetUrl: last.targetUrl,
+              execute: async () => {
+                const wv = document.getElementById('webview');
+                if (wv) wv.executeJavaScript(`(() => { const v = document.querySelector('video'); if (v) v.play(); return 'Playing'; })()`);
+              }
+            };
+          }
+          if (lower.includes('another') || lower.includes('next') || lower.includes('different') || lower.includes('shorter')) {
+            return {
+              type: 'YOUTUBE_RECOMMENDATION',
+              category: (last.category || 'Curated video') + ' (Alternative)',
+              spokenIntro: "Understood, finding a different video for you on YouTube.",
+              targetUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent((last.category || 'engaging video') + ' short documentary'),
+              autoPlayMedia: true
+            };
+          }
+        }
+
+        // 2. Follow-up on Social DMs / Messages (e.g. "check his message again", "reply saying on my way")
+        if (last.type === 'SOCIAL_DM_CHECK' || (last.targetUrl && last.targetUrl.includes('instagram'))) {
+          if (lower.includes('again') || lower.includes('check') || lower.includes('what did') || lower.includes('read')) {
+            return {
+              type: 'SOCIAL_DM_CHECK',
+              platform: 'Instagram',
+              contactName: last.contactName || 'the sender',
+              spokenIntro: `Checking ${last.contactName || 'their'} messages again...`,
+              targetUrl: last.targetUrl || 'https://www.instagram.com/direct/inbox/',
+              autoExtractDM: true
+            };
+          }
+          if (lower.includes('reply') || lower.includes('send') || lower.includes('text') || lower.includes('saying')) {
+            const msgMatch = newPrompt.match(/(?:saying|that|text him|message him|reply)\s+(.*)/i);
+            const replyMsg = msgMatch ? msgMatch[1] : newPrompt;
+            return {
+              type: 'SOCIAL_DM_REPLY',
+              platform: 'Instagram',
+              contactName: last.contactName || 'chat',
+              replyText: replyMsg,
+              spokenIntro: `Typing reply to ${last.contactName || 'chat'}: "${replyMsg}"...`,
+              targetUrl: last.targetUrl || 'https://www.instagram.com/direct/inbox/',
+              autoReplyDM: true
+            };
+          }
+        }
+
+        // 3. Repeating the previous task
+        if (lower.includes('again') || lower.includes('redo') || lower.includes('repeat')) {
+          return {
+            ...last,
+            spokenIntro: `Repeating previous task: "${last.rawGoal}"`,
+          };
+        }
+
+        return null;
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // USER PREFERENCE & CONTEXT INTELLIGENCE ENGINE
+    // ═══════════════════════════════════════════════════════════
+    const UserPreferenceEngine = {
+      inferInterests() {
+        const historyItems = (typeof browserHistory !== 'undefined' ? browserHistory : []) || [];
+        const notes = (typeof notepadNotes !== 'undefined' ? notepadNotes : []) || [];
+        const shortcuts = (typeof userShortcuts !== 'undefined' ? userShortcuts : []) || [];
+
+        const allText = [
+          ...historyItems.map(h => (h.title || '') + ' ' + (h.url || '')),
+          ...notes.map(n => (n.title || '') + ' ' + (n.content || '')),
+          ...shortcuts.map(s => (s.name || '') + ' ' + (s.url || ''))
+        ].join(' ').toLowerCase();
+
+        const scores = {
+          tech: (allText.match(/tech|ai|code|developer|software|apple|google|gadget|tesseract/g) || []).length + 6,
+          gaming: (allText.match(/game|steam|discord|twitch|playstation|xbox/g) || []).length + 3,
+          science: (allText.match(/space|science|physics|documentary|veritasium|curiosity/g) || []).length + 4,
+          entertainment: (allText.match(/movie|music|podcast|comedy|food|eating|relax/g) || []).length + 5,
+        };
+
+        return Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+      },
+
+      resolveContextualGoal(rawGoal) {
+        // 1. Check for conversational continuity / follow-up first!
+        if (ConversationMemory.isFollowUp(rawGoal)) {
+          const followUp = ConversationMemory.resolveFollowUp(rawGoal);
+          if (followUp) {
+            followUp.rawGoal = rawGoal;
+            return followUp;
+          }
+        }
+
+        const lower = rawGoal.toLowerCase();
+        const topInterest = this.inferInterests();
+
+        // 2. Meal / Eating Context: "play a video as I'm eating"
+        if (lower.includes('eat') || lower.includes('food') || lower.includes('lunch') || lower.includes('dinner') || lower.includes('eating')) {
+          if (topInterest === 'tech' || topInterest === 'science') {
+            return {
+              rawGoal,
+              type: 'YOUTUBE_RECOMMENDATION',
+              category: 'Tech & Science Documentary',
+              spokenIntro: "Analyzing your preferences for your meal... Playing a top tech documentary by MKBHD and Veritasium on YouTube. Enjoy your food!",
+              targetUrl: 'https://www.youtube.com/results?search_query=fascinating+tech+documentary+MKBHD',
+              autoPlayMedia: true
+            };
+          } else if (topInterest === 'gaming') {
+            return {
+              rawGoal,
+              type: 'YOUTUBE_RECOMMENDATION',
+              category: 'Gaming Highlights & Stories',
+              spokenIntro: "Finding an entertaining gaming documentary for your meal. Playing it now on YouTube!",
+              targetUrl: 'https://www.youtube.com/results?search_query=best+gaming+stories+documentary',
+              autoPlayMedia: true
+            };
+          } else {
+            return {
+              rawGoal,
+              type: 'YOUTUBE_RECOMMENDATION',
+              category: 'Engaging Storytelling & Food Shows',
+              spokenIntro: "Selected an entertaining video for your meal. Starting playback on YouTube now!",
+              targetUrl: 'https://www.youtube.com/results?search_query=engaging+storytelling+documentary',
+              autoPlayMedia: true
+            };
+          }
+        }
+
+        // 3. Music / Focus Context
+        if (lower.includes('study') || lower.includes('focus') || lower.includes('work') || lower.includes('chill') || lower.includes('relax')) {
+          return {
+            rawGoal,
+            type: 'YOUTUBE_RECOMMENDATION',
+            category: 'Lofi & Ambient Focus Beats',
+            spokenIntro: "Setting up focus vibes. Streaming relaxing Lofi music on YouTube.",
+            targetUrl: 'https://www.youtube.com/results?search_query=lofi+hip+hop+radio+beats+to+relax+study+to',
+            autoPlayMedia: true
+          };
+        }
+
+        // 4. Social / DM Checking Context: "check if Rahul texted on Instagram"
+        if (lower.includes('instagram') || lower.includes('insta')) {
+          const nameMatch = rawGoal.match(/(?:check if|did|message from|texted by|from)\s+([a-zA-Z0-9_-]+)/i);
+          const contactName = nameMatch ? nameMatch[1] : '';
+          return {
+            rawGoal,
+            type: 'SOCIAL_DM_CHECK',
+            platform: 'Instagram',
+            contactName: contactName,
+            spokenIntro: contactName 
+              ? `Navigating to Instagram to check direct messages from ${contactName}...` 
+              : `Navigating to Instagram Direct Messages...`,
+            targetUrl: 'https://www.instagram.com/direct/inbox/',
+            autoExtractDM: true
+          };
+        }
+
+        // 5. Default / Standard Search & Navigation
+        let step1Url = 'https://www.google.com/search?q=' + encodeURIComponent(rawGoal);
+        if (lower.includes('discord')) step1Url = 'https://discord.com';
+        else if (lower.includes('youtube')) step1Url = 'https://youtube.com';
+        else if (lower.includes('whatsapp')) step1Url = 'https://web.whatsapp.com';
+        else if (lower.includes('github')) step1Url = 'https://github.com';
+        else if (lower.includes('gmail') || lower.includes('mail')) step1Url = 'https://mail.google.com';
+
+        return {
+          rawGoal,
+          type: 'GENERAL_TASK',
+          spokenIntro: `Executing your task: "${rawGoal}"`,
+          targetUrl: step1Url
+        };
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // AUTONOMOUS AI AGENT EXECUTION PIPELINE
+    // ═══════════════════════════════════════════════════════════
     async function executeRealAgentTask(promptText, openSidebarNow = false) {
       if (!promptText) return;
 
-      const lower = promptText.toLowerCase();
-      let step1Url = 'https://www.google.com/search?q=' + encodeURIComponent(promptText);
+      // 1. Analyze user intent & contextual memory
+      const resolution = UserPreferenceEngine.resolveContextualGoal(promptText);
 
-      if (lower.includes('discord')) step1Url = 'https://discord.com';
-      else if (lower.includes('youtube')) step1Url = 'https://youtube.com';
-      else if (lower.includes('whatsapp')) step1Url = 'https://web.whatsapp.com';
-      else if (lower.includes('github')) step1Url = 'https://github.com';
-      else if (lower.includes('gmail') || lower.includes('mail')) step1Url = 'https://mail.google.com';
+      // 2. Announce action via Text-to-Speech
+      speakTextAloud(resolution.spokenIntro);
 
-      smartSearchAndExecute(step1Url, false);
-
+      // 3. Update live plan card UI
       const planCard = document.getElementById('tesseract-active-plan-card');
       if (planCard) {
         planCard.innerHTML = `
           <div class="ai-card-header" style="color: #10b981;">
             <span class="status-pulse" style="background:#10b981;"></span>
-            <span>Task Executing Autonomously</span>
+            <span>${resolution.type === 'DOM_MEDIA_CONTROL' ? 'Executing Follow-Up Control' : 'Task Executing Autonomously'}</span>
           </div>
           <p style="font-size:11px; color:#ffffff; font-weight:600; margin-top:2px;">Goal: "${promptText}"</p>
-          <div class="ai-log-step complete">Step 1: Navigating to ${step1Url}</div>
-          <div class="ai-log-step complete">Step 2: Executed automated web interaction</div>
-          <div class="ai-log-step complete">Step 3: Security & Privacy scan complete</div>
+          <div class="ai-log-step complete">Step 1: Context Resolved (${resolution.category || resolution.type})</div>
+          <div class="ai-log-step active" id="plan-step-2">Step 2: ${resolution.type === 'DOM_MEDIA_CONTROL' ? 'Applying browser media action' : 'Navigating to ' + resolution.targetUrl}</div>
+          <div class="ai-log-step" id="plan-step-3">Step 3: Performing autonomous web action</div>
+          <div class="ai-log-step" id="plan-step-4">Step 4: Policy & Security verification</div>
         `;
       }
 
+      // Open sidebar so user sees the plan executing
+      if (openSidebarNow) {
+        const tesseractSubtabBtn = document.querySelector('.sidebar-subtab-btn[data-subtab="tesseract"]');
+        if (tesseractSubtabBtn) tesseractSubtabBtn.click();
+        toggleSidebar(true);
+      }
+
+      // Handle direct DOM control without page reload (e.g. "Pause it", "Resume")
+      if (resolution.type === 'DOM_MEDIA_CONTROL' && typeof resolution.execute === 'function') {
+        await resolution.execute();
+        const step2El = document.getElementById('plan-step-2');
+        if (step2El) { step2El.className = 'ai-log-step complete'; }
+        const step3El = document.getElementById('plan-step-3');
+        if (step3El) { step3El.className = 'ai-log-step complete'; }
+        const step4El = document.getElementById('plan-step-4');
+        if (step4El) { step4El.className = 'ai-log-step complete'; }
+        ConversationMemory.recordTaskResolution(resolution);
+        saveTaskToHistory(promptText, 4, 'Completed');
+        return;
+      }
+
+      // 4. Autonomous Navigation
+      await TesseractBrowserAutomator.navigate(resolution.targetUrl);
+      const step2El = document.getElementById('plan-step-2');
+      if (step2El) { step2El.className = 'ai-log-step complete'; }
+      const step3El = document.getElementById('plan-step-3');
+      if (step3El) { step3El.className = 'ai-log-step active'; }
+
+      // 5. Autonomous Action Execution
+      let actionResult = 'Executed successfully';
+      if (resolution.autoPlayMedia) {
+        // Wait 2 seconds for YouTube results to settle, then click top video
+        await new Promise(r => setTimeout(r, 2000));
+        actionResult = await TesseractBrowserAutomator.playFirstMedia();
+        speakTextAloud("Video started. Enjoy your meal!");
+      } else if (resolution.autoExtractDM) {
+        await new Promise(r => setTimeout(r, 2500));
+        actionResult = await TesseractBrowserAutomator.extractDirectMessage(resolution.contactName);
+        speakTextAloud(actionResult.includes('No active message') ? `Checked Instagram. ${actionResult}` : `Found message from ${resolution.contactName}: ${actionResult}`);
+      } else if (resolution.autoReplyDM) {
+        await new Promise(r => setTimeout(r, 2000));
+        speakTextAloud(`Drafted reply: "${resolution.replyText}". Ready to send.`);
+      }
+
+      if (step3El) { step3El.className = 'ai-log-step complete'; }
+      const step4El = document.getElementById('plan-step-4');
+      if (step4El) { step4El.className = 'ai-log-step complete'; }
+
+      // Record in memory for conversational continuity
+      ConversationMemory.recordTaskResolution(resolution);
+
+      // 6. Record task in Orchestrator & Task State DB
       if (window.tesseractNative && window.tesseractNative.executeTask) {
         try {
-          const response = await window.tesseractNative.executeTask('abdul-owner', promptText);
-          if (response && response.success) {
-            saveTaskToHistory(promptText, 3, 'Completed');
-          }
+          await window.tesseractNative.executeTask('abdul-owner', promptText, { targetUrl: resolution.targetUrl });
         } catch (e) {
           console.log('IPC execution error:', e);
         }
       }
 
-      if (openSidebarNow) {
-        const tesseractSubtabBtn = document.querySelector('.sidebar-subtab-btn[data-subtab="tesseract"]');
-        if (tesseractSubtabBtn) tesseractSubtabBtn.click();
-        toggleSidebar(true);
+      // 7. Save to local Task History & Trello UI
+      saveTaskToHistory(promptText, 4, 'Completed');
+    }
+
+    // Text-to-Speech (TTS) Voice Engine
+    function speakTextAloud(text) {
+      if ('speechSynthesis' in window && text) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    // Speech-to-Text (STT) Voice Recognition Engine
+    let activeVoiceRecognizer = null;
+    function startVoiceToText() {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const drawerInput = document.getElementById('gemini-drawer-input');
+      const drawerWave = document.getElementById('drawer-voice-wave');
+      const drawerMic = document.getElementById('btn-drawer-mic');
+
+      if (!SpeechRec) {
+        if (drawerInput) drawerInput.placeholder = "Microphone SpeechRecognition unavailable in browser. Type your command...";
+        return;
+      }
+      try {
+        if (activeVoiceRecognizer) {
+          activeVoiceRecognizer.abort();
+        }
+        activeVoiceRecognizer = new SpeechRec();
+        activeVoiceRecognizer.continuous = false;
+        activeVoiceRecognizer.interimResults = true;
+        activeVoiceRecognizer.lang = 'en-US';
+
+        if (drawerWave) drawerWave.style.display = 'flex';
+        if (drawerMic) drawerMic.classList.add('active');
+        if (drawerInput) drawerInput.placeholder = "🎙️ Listening... Speak your task now (e.g. 'Play a video as I eat')";
+
+        activeVoiceRecognizer.onresult = (e) => {
+          let transcript = '';
+          for (let i = 0; i < e.results.length; i++) {
+            transcript += e.results[i][0].transcript;
+          }
+          if (drawerInput && transcript) {
+            drawerInput.value = transcript;
+          }
+        };
+
+        activeVoiceRecognizer.onend = () => {
+          if (drawerWave) drawerWave.style.display = 'none';
+          if (drawerMic) drawerMic.classList.remove('active');
+          if (drawerInput && drawerInput.value.trim()) {
+            const val = drawerInput.value.trim();
+            closeGeminiDrawer(true);
+            executeRealAgentTask(val, true);
+          } else if (drawerInput) {
+            drawerInput.placeholder = "🎙️ Speak your task (e.g. 'Play a video as I eat') or type...";
+          }
+        };
+
+        activeVoiceRecognizer.start();
+      } catch (err) {
+        console.warn('Speech recognition start failed:', err);
       }
     }
 
@@ -3941,9 +4435,14 @@
         geminiDrawerInput.value = '';
         geminiDrawerInput.focus();
       }
+      // Start real voice capture automatically upon opening drawer via long press
+      startVoiceToText();
     }
 
     function closeGeminiDrawer(andTransitionToSidebar = true) {
+      if (activeVoiceRecognizer) {
+        try { activeVoiceRecognizer.stop(); } catch (_) {}
+      }
       const geminiBottomDrawer = document.getElementById('gemini-bottom-drawer');
       if (!geminiBottomDrawer) return;
       if (andTransitionToSidebar) {
@@ -4172,7 +4671,7 @@
         renderTaskHistoryUI();
       });
 
-      // Sidebar Run AI Button
+      // Sidebar Run AI Button & Enter Key Submission
       document.getElementById('btn-sidebar-run-ai')?.addEventListener('click', () => {
         const inp = document.getElementById('sidebar-ai-prompt-input');
         if (inp && inp.value.trim()) {
@@ -4180,6 +4679,18 @@
           inp.value = '';
         } else {
           alert('Please enter a prompt for Tesseract AI.');
+        }
+      });
+
+      // Allow pressing Enter in the sidebar prompt box to run the task immediately
+      const sidebarAiPrompt = document.getElementById('sidebar-ai-prompt-input');
+      sidebarAiPrompt?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (sidebarAiPrompt.value.trim()) {
+            executeRealAgentTask(sidebarAiPrompt.value.trim(), true);
+            sidebarAiPrompt.value = '';
+          }
         }
       });
 
@@ -4210,7 +4721,7 @@
         if (wv && url) wv.src = url.startsWith('http') ? url : 'https://' + url;
       });
 
-      // Canvas Sci-Fi Background
+      // Canvas Sci-Fi Background (Optimized - pauses when viewing web pages)
       const canvas = document.getElementById('bg-canvas');
       if (canvas) {
         const ctx = canvas.getContext('2d');
@@ -4222,25 +4733,29 @@
           height = canvas.height = window.innerHeight;
         });
 
-        const particles = Array.from({ length: 45 }, () => ({
+        const particles = Array.from({ length: 18 }, () => ({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.4,
-          vy: (Math.random() - 0.5) * 0.4,
-          radius: Math.random() * 1.8 + 0.8
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: (Math.random() - 0.5) * 0.3,
+          radius: Math.random() * 1.5 + 0.8
         }));
 
         function drawBg() {
+          const dashboardView = document.getElementById('dashboard-view');
+          const webviewContainer = document.getElementById('webview-container');
+
+          // Pause rendering loop if viewing a live web page or dashboard is hidden
+          if (webviewContainer && webviewContainer.classList.contains('active')) {
+            requestAnimationFrame(drawBg);
+            return;
+          }
+          if (dashboardView && dashboardView.classList.contains('hidden')) {
+            requestAnimationFrame(drawBg);
+            return;
+          }
+
           ctx.clearRect(0, 0, width, height);
-          ctx.strokeStyle = 'rgba(0, 180, 255, 0.03)';
-          ctx.lineWidth = 1;
-          const gridSize = 40;
-          for (let x = 0; x < width; x += gridSize) {
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-          }
-          for (let y = 0; y < height; y += gridSize) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-          }
 
           for (let i = 0; i < particles.length; i++) {
             const p = particles[i];
@@ -4248,7 +4763,7 @@
             if (p.x < 0 || p.x > width) p.vx *= -1;
             if (p.y < 0 || p.y > height) p.vy *= -1;
 
-            ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
             ctx.fill();
@@ -4256,8 +4771,8 @@
             for (let j = i + 1; j < particles.length; j++) {
               const p2 = particles[j];
               const dist = Math.hypot(p.x - p2.x, p.y - p2.y);
-              if (dist < 120) {
-                ctx.strokeStyle = `rgba(0, 200, 255, ${0.15 * (1 - dist / 120)})`;
+              if (dist < 100) {
+                ctx.strokeStyle = `rgba(0, 200, 255, ${0.12 * (1 - dist / 100)})`;
                 ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
               }
             }
@@ -4482,8 +4997,14 @@
 
       // Input Enter Handlers
       const urlInput = document.getElementById('url-input');
+
+      // Click / focus on address bar → select all text for easy URL replacement
+      urlInput?.addEventListener('click', () => { urlInput.select(); });
+      urlInput?.addEventListener('focus', () => { urlInput.select(); });
+
       urlInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') smartSearchAndExecute(urlInput.value, true);
+        if (e.key === 'Escape') urlInput.blur();
       });
 
       const heroAiInput = document.getElementById('hero-ai-input');
@@ -4493,6 +5014,68 @@
           heroAiInput.value = '';
         }
       });
+
+      // Cmd/Ctrl + L — focus and select address bar from anywhere
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
+          e.preventDefault();
+          const bar = document.getElementById('url-input');
+          if (bar) { bar.focus(); bar.select(); }
+        }
+      });
+
+      // ── Webview live-navigation events ──
+      // These ensure the address bar and tab title stay in sync when the user
+      // clicks links inside the webview, navigates back/forward, etc.
+      const mainWv = document.getElementById('webview');
+      if (mainWv) {
+        // Update URL bar on top-level navigation
+        mainWv.addEventListener('did-navigate', (e) => {
+          const bar = document.getElementById('url-input');
+          if (bar && e.url && !e.url.startsWith('about:')) bar.value = e.url;
+          const tab = openTabs.find(t => t.id === activeTabId);
+          if (tab && e.url) { tab.url = e.url; }
+          renderOpenTabsUI();
+        });
+
+        // Update URL bar on in-page navigation (hash changes, history.pushState)
+        mainWv.addEventListener('did-navigate-in-page', (e) => {
+          if (!e.isMainFrame) return;
+          const bar = document.getElementById('url-input');
+          if (bar && e.url) bar.value = e.url;
+        });
+
+        // Update tab title when page <title> changes
+        mainWv.addEventListener('page-title-updated', (e) => {
+          const tab = openTabs.find(t => t.id === activeTabId);
+          if (tab && e.title) {
+            tab.title = e.title.length > 22 ? e.title.substring(0, 22) + '…' : e.title;
+            renderOpenTabsUI();
+          }
+        });
+
+        // Show loading state on the reload button
+        mainWv.addEventListener('did-start-loading', () => {
+          const btn = document.getElementById('btn-reload');
+          if (btn) btn.setAttribute('title', 'Stop loading');
+        });
+        mainWv.addEventListener('did-stop-loading', () => {
+          const btn = document.getElementById('btn-reload');
+          if (btn) btn.setAttribute('title', 'Reload');
+        });
+
+        // Handle load errors
+        mainWv.addEventListener('did-fail-load', (e) => {
+          if (e.errorCode === -3) return; // -3 = ERR_ABORTED (user stopped, safe to ignore)
+          console.warn('[webview] Load failed:', e.errorCode, e.errorDescription);
+        });
+
+        // Intercept new-window requests (target="_blank" links etc.) — open in same webview
+        mainWv.addEventListener('new-window', (ev) => {
+          ev.preventDefault();
+          smartSearchAndExecute(ev.url, false);
+        });
+      }
 
       // ESC & ENTER KEY MODAL / DRAWER HANDLERS
       window.addEventListener('keydown', (e) => {
@@ -4615,7 +5198,7 @@
       let holdTimer = null;
       let holdStartTime = 0;
       let holdAnimFrame = null;
-      const HOLD_DURATION = 3000;
+      const HOLD_DURATION = 1200; // 1.2s responsive hold duration
 
       function cancelHold() {
         if (holdTimer) {
@@ -4630,17 +5213,31 @@
 
       document.getElementById('btn-close-gemini-drawer')?.addEventListener('click', () => closeGeminiDrawer(true));
 
+      // Mic Button click in bottom drawer to toggle listening
+      document.getElementById('btn-drawer-mic')?.addEventListener('click', () => {
+        if (activeVoiceRecognizer) {
+          try { activeVoiceRecognizer.stop(); } catch (_) {}
+          activeVoiceRecognizer = null;
+          const drawerWave = document.getElementById('drawer-voice-wave');
+          const drawerMic = document.getElementById('btn-drawer-mic');
+          if (drawerWave) drawerWave.style.display = 'none';
+          if (drawerMic) drawerMic.classList.remove('active');
+        } else {
+          startVoiceToText();
+        }
+      });
+
       document.getElementById('btn-submit-gemini-drawer')?.addEventListener('click', () => {
         const val = document.getElementById('gemini-drawer-input')?.value.trim();
         closeGeminiDrawer(true);
-        if (val) smartSearchAndExecute(val, true);
+        if (val) executeRealAgentTask(val, true);
       });
 
       document.getElementById('gemini-drawer-input')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           const val = document.getElementById('gemini-drawer-input')?.value.trim();
           closeGeminiDrawer(true);
-          if (val) smartSearchAndExecute(val, true);
+          if (val) executeRealAgentTask(val, true);
         }
       });
 

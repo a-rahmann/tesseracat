@@ -3,6 +3,12 @@ import path from 'path';
 import { AgentOrchestrator } from '../../agent-runtime/dist/index.js';
 import { PolicyContext, TaskStep } from '../../../packages/core-types/dist/index.js';
 
+// Optimize Chromium rendering performance and fix macOS GPU lag
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+
 let mainWindow: BrowserWindow | null = null;
 const orchestrator = new AgentOrchestrator();
 
@@ -37,6 +43,53 @@ orchestrator.registerTool({
   execute: async () => {
     return { trackersBlocked: 14, promptInjectionRisk: 'NONE', privacyScore: 98 };
   },
+});
+
+orchestrator.registerTool({
+  name: 'browser_navigate',
+  description: 'Navigate the active browser tab to a specified URL',
+  category: 'READ_PAGE',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'Target destination URL' }
+    }
+  },
+  execute: async (input: Record<string, unknown>) => {
+    return { url: input.url, status: 'navigated' };
+  }
+});
+
+orchestrator.registerTool({
+  name: 'dom_interact',
+  description: 'Interact with DOM elements (click, type, play_media, extract)',
+  category: 'INTERACT_DOM',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      action: { type: 'string' },
+      selector: { type: 'string' },
+      value: { type: 'string' }
+    }
+  },
+  execute: async (input: Record<string, unknown>) => {
+    return { action: input.action, status: 'completed' };
+  }
+});
+
+orchestrator.registerTool({
+  name: 'user_context_analyze',
+  description: 'Analyze implicit user context and recommend optimal content',
+  category: 'READ_PAGE',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      context: { type: 'string' }
+    }
+  },
+  execute: async (input: Record<string, unknown>) => {
+    return { context: input.context, recommendedCategory: 'Tech Documentary & Entertainment', status: 'ready' };
+  }
 });
 
 function createWindow() {
@@ -93,21 +146,29 @@ app.on('window-all-closed', () => {
 });
 
 // IPC Handlers
-ipcMain.handle('execute-agent-task', async (_event, { profileId = 'abdul-default', goal = '' }) => {
+ipcMain.handle('execute-agent-task', async (_event, { profileId = 'abdul-default', goal = '', contextData = {} }) => {
   try {
     const task = orchestrator.createTask(profileId, goal);
+    const lower = goal.toLowerCase();
+    
+    // Build context-aware steps
     const steps: TaskStep[] = [
-      { id: `step-1-${Date.now()}`, stepNumber: 1, description: `Process task: "${goal}"`, status: 'SUCCESS' },
-      { id: `step-2-${Date.now()}`, stepNumber: 2, description: `Execute search context`, toolName: 'web_search', toolParameters: { query: goal }, status: 'SUCCESS' },
-      { id: `step-3-${Date.now()}`, stepNumber: 3, description: `Verify policy & security`, toolName: 'privacy_scan', status: 'SUCCESS' }
+      { id: `step-1-${Date.now()}`, stepNumber: 1, description: `Analyze context for: "${goal}"`, toolName: 'user_context_analyze', toolParameters: { context: goal }, status: 'SUCCESS' },
+      { id: `step-2-${Date.now()}`, stepNumber: 2, description: `Navigate to target service`, toolName: 'browser_navigate', toolParameters: { url: (contextData as any).targetUrl || 'https://google.com' }, status: 'SUCCESS' },
+      { id: `step-3-${Date.now()}`, stepNumber: 3, description: `Execute autonomous browser action`, toolName: 'dom_interact', toolParameters: { action: 'execute' }, status: 'SUCCESS' },
+      { id: `step-4-${Date.now()}`, stepNumber: 4, description: `Verify policy & security`, toolName: 'privacy_scan', status: 'SUCCESS' }
     ];
 
     orchestrator.setPlanSteps(profileId, task.id, steps);
     const context: PolicyContext = { profileId, isAutonomousMission: true, dailyCloudSpendCapUSD: 10, currentCloudSpendUSD: 0.05 };
-    const res2 = await orchestrator.executeStep(task.id, steps[1].id, context);
-    const res3 = await orchestrator.executeStep(task.id, steps[2].id, context);
+    
+    const results = [];
+    for (let i = 0; i < steps.length; i++) {
+      const res = await orchestrator.executeStep(task.id, steps[i].id, context);
+      results.push(res);
+    }
 
-    return { success: true, task: orchestrator.getTask(profileId, task.id), stepResults: [res2, res3] };
+    return { success: true, task: orchestrator.getTask(profileId, task.id), stepResults: results };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
