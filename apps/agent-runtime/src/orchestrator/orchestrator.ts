@@ -8,18 +8,42 @@ import {
 import { DeterministicPolicyEngine, RiskClassifier } from '../../../../packages/policy-engine/dist/index.js';
 import { TaskStateDatabase } from '../../../../packages/task-state-db/dist/index.js';
 
+import { GeminiLLMProvider } from '../llm/gemini-provider.js';
+
 export class AgentOrchestrator {
   private policyEngine: DeterministicPolicyEngine;
   private database: TaskStateDatabase;
   private registeredTools: Map<string, TypedTool> = new Map();
+  private llmProvider: GeminiLLMProvider;
 
-  constructor() {
+  constructor(apiKey?: string) {
     this.policyEngine = new DeterministicPolicyEngine();
     this.database = new TaskStateDatabase();
+    this.llmProvider = new GeminiLLMProvider(apiKey);
+  }
+
+  public setApiKey(apiKey: string): void {
+    this.llmProvider.setApiKey(apiKey);
   }
 
   public registerTool(tool: TypedTool): void {
     this.registeredTools.set(tool.name, tool);
+  }
+
+  public async createTaskAndPlan(profileId: string, userGoal: string): Promise<TaskRecord> {
+    const task = this.createTask(profileId, userGoal);
+    const llmSteps = await this.llmProvider.generatePlan(userGoal);
+
+    const steps: TaskStep[] = llmSteps.map((s, idx) => ({
+      id: `step-${idx + 1}-${Date.now()}`,
+      stepNumber: s.stepNumber || idx + 1,
+      description: s.description || `Step ${idx + 1}`,
+      toolName: s.toolName,
+      toolParameters: s.toolParameters || {},
+      status: 'PENDING',
+    }));
+
+    return this.setPlanSteps(profileId, task.id, steps);
   }
 
   public createTask(profileId: string, userGoal: string): TaskRecord {
