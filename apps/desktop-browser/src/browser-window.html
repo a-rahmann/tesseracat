@@ -4187,48 +4187,37 @@
         }
 
         const lower = rawGoal.toLowerCase();
-        const topInterest = this.inferInterests();
 
-        // 2. Meal / Eating Context: "play a video as I'm eating"
+        // 2. Meal / Relax Context: dynamically extract or search what the user wants to watch
         if (lower.includes('eat') || lower.includes('food') || lower.includes('lunch') || lower.includes('dinner') || lower.includes('eating')) {
-          if (topInterest === 'tech' || topInterest === 'science') {
-            return {
-              rawGoal,
-              type: 'YOUTUBE_RECOMMENDATION',
-              category: 'Tech & Science Documentary',
-              spokenIntro: "Analyzing your preferences for your meal... Playing a top tech documentary by MKBHD and Veritasium on YouTube. Enjoy your food!",
-              targetUrl: 'https://www.youtube.com/results?search_query=fascinating+tech+documentary+MKBHD',
-              autoPlayMedia: true
-            };
-          } else if (topInterest === 'gaming') {
-            return {
-              rawGoal,
-              type: 'YOUTUBE_RECOMMENDATION',
-              category: 'Gaming Highlights & Stories',
-              spokenIntro: "Finding an entertaining gaming documentary for your meal. Playing it now on YouTube!",
-              targetUrl: 'https://www.youtube.com/results?search_query=best+gaming+stories+documentary',
-              autoPlayMedia: true
-            };
-          } else {
-            return {
-              rawGoal,
-              type: 'YOUTUBE_RECOMMENDATION',
-              category: 'Engaging Storytelling & Food Shows',
-              spokenIntro: "Selected an entertaining video for your meal. Starting playback on YouTube now!",
-              targetUrl: 'https://www.youtube.com/results?search_query=engaging+storytelling+documentary',
-              autoPlayMedia: true
-            };
+          let cleanQuery = rawGoal
+            .replace(/(?:can you|please|i want to|just)?\s*(?:play|find|watch|put on)?\s*(?:a video|something|a movie)?\s*(?:as|while)?\s*(?:i am|i'm|im)?\s*(?:eating|having|eat)?\s*(?:food|lunch|dinner|breakfast|meal)?/gi, '')
+            .trim();
+          if (!cleanQuery) {
+            cleanQuery = 'interesting video to watch while eating';
           }
-        }
-
-        // 3. Music / Focus Context
-        if (lower.includes('study') || lower.includes('focus') || lower.includes('work') || lower.includes('chill') || lower.includes('relax')) {
           return {
             rawGoal,
             type: 'YOUTUBE_RECOMMENDATION',
-            category: 'Lofi & Ambient Focus Beats',
-            spokenIntro: "Setting up focus vibes. Streaming relaxing Lofi music on YouTube.",
-            targetUrl: 'https://www.youtube.com/results?search_query=lofi+hip+hop+radio+beats+to+relax+study+to',
+            category: 'Dynamic Video Playback',
+            spokenIntro: `Finding "${cleanQuery}" on YouTube for your meal. Enjoy!`,
+            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`,
+            autoPlayMedia: true
+          };
+        }
+
+        // 3. Music / Focus Context: dynamically construct query from user request
+        if (lower.includes('study') || lower.includes('focus') || lower.includes('chill') || lower.includes('relax')) {
+          let musicQuery = rawGoal
+            .replace(/(?:can you|please)?\s*(?:play|put on)?\s*(?:some|music for|songs for)?/gi, '')
+            .trim();
+          if (!musicQuery) musicQuery = 'relaxing focus beats';
+          return {
+            rawGoal,
+            type: 'YOUTUBE_RECOMMENDATION',
+            category: 'Music & Focus Playback',
+            spokenIntro: `Playing "${musicQuery}" on YouTube.`,
+            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(musicQuery)}`,
             autoPlayMedia: true
           };
         }
@@ -4418,7 +4407,8 @@
 
       // 7. Save to local Task History & Trello UI
       saveTaskToHistory(promptText, 4, 'Completed');
-    }
+
+Unexpected
 
     // Text-to-Speech (TTS) Voice Engine
     function speakTextAloud(text) {
@@ -4433,21 +4423,46 @@
 
     // Speech-to-Text (STT) Voice Recognition Engine (Continuous Native + WebSpeech)
     let activeVoiceRecognizer = null;
-    let isListeningContinuously = false;
-    let nativeVoiceInitialized = false;
+    // ═══════════════════════════════════════════════════════════
+    // LOCAL WHISPER AI SPEECH-TO-TEXT ENGINE (16kHz Web Audio)
+    // ═══════════════════════════════════════════════════════════
+    let isWhisperListening = false;
+    let whisperAudioContext = null;
+    let whisperMediaStream = null;
+    let whisperScriptNode = null;
+    let whisperAudioChunks = [];
+    let whisperLastSpeechTime = 0;
+    let whisperAutoFinishTimer = null;
+
+    function cleanupWhisperAudio() {
+      if (whisperScriptNode) {
+        try { whisperScriptNode.disconnect(); } catch (_) {}
+        whisperScriptNode = null;
+      }
+      if (whisperAudioContext) {
+        try { whisperAudioContext.close(); } catch (_) {}
+        whisperAudioContext = null;
+      }
+      if (whisperMediaStream) {
+        try {
+          whisperMediaStream.getTracks().forEach(track => track.stop());
+        } catch (_) {}
+        whisperMediaStream = null;
+      }
+      if (whisperAutoFinishTimer) {
+        clearInterval(whisperAutoFinishTimer);
+        whisperAutoFinishTimer = null;
+      }
+    }
 
     function stopVoiceToText() {
-      isListeningContinuously = false;
-      if (window.tesseractNative && window.tesseractNative.stopVoiceListening) {
-        try { window.tesseractNative.stopVoiceListening(); } catch (_) {}
-      }
-      if (activeVoiceRecognizer) {
-        try { activeVoiceRecognizer.abort(); } catch (_) {}
-        activeVoiceRecognizer = null;
-      }
+      isWhisperListening = false;
+      cleanupWhisperAudio();
+
       const drawerWave = document.getElementById('drawer-voice-wave');
       const drawerMic = document.getElementById('btn-drawer-mic');
       const drawerInput = document.getElementById('gemini-drawer-input');
+
       if (drawerWave) drawerWave.style.display = 'none';
       if (drawerMic) drawerMic.classList.remove('active');
       if (drawerInput && !drawerInput.value) {
@@ -4455,9 +4470,11 @@
       }
     }
 
-    function startVoiceToText() {
+    async function startVoiceToText() {
       stopVoiceToText();
-      isListeningContinuously = true;
+      isWhisperListening = true;
+      whisperAudioChunks = [];
+      whisperLastSpeechTime = 0;
 
       const drawerInput = document.getElementById('gemini-drawer-input');
       const drawerWave = document.getElementById('drawer-voice-wave');
@@ -4466,85 +4483,204 @@
       if (drawerWave) drawerWave.style.display = 'flex';
       if (drawerMic) drawerMic.classList.add('active');
       if (drawerInput) {
-        drawerInput.placeholder = "🎙️ Listening continuously... Speak your task or type on keyboard to stop";
+        drawerInput.placeholder = "🎙️ Listening with Local Whisper AI... Speak your command or type to stop";
       }
 
-      // Check for native Windows SAPI Speech Recognition first (via Electron bridge)
-      if (window.tesseractNative && window.tesseractNative.startVoiceListening) {
-        window.tesseractNative.startVoiceListening().catch(err => console.warn('Native voice start error:', err));
+      try {
+        whisperMediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
 
-        if (!nativeVoiceInitialized) {
-          nativeVoiceInitialized = true;
-          window.tesseractNative.onVoiceHypothesis((text) => {
-            if (isListeningContinuously && text) {
-              const input = document.getElementById('gemini-drawer-input');
-              if (input) input.value = text;
-            }
-          });
+        whisperAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const source = whisperAudioContext.createMediaStreamSource(whisperMediaStream);
 
-          window.tesseractNative.onVoiceRecognized((text) => {
-            if (isListeningContinuously && text && text.trim()) {
-              const input = document.getElementById('gemini-drawer-input');
-              if (input) input.value = text;
-              stopVoiceToText();
-              closeGeminiDrawer(true);
-              executeRealAgentTask(text.trim(), true);
-            }
-          });
-        }
+        const bufferSize = 4096;
+        whisperScriptNode = whisperAudioContext.createScriptProcessor(bufferSize, 1, 1);
+
+        whisperScriptNode.onaudioprocess = (e) => {
+          if (!isWhisperListening) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          whisperAudioChunks.push(new Float32Array(inputData));
+
+          // Voice Activity Detection (RMS energy)
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            sum += inputData[i] * inputData[i];
+          }
+          const rms = Math.sqrt(sum / inputData.length);
+          if (rms > 0.015) {
+            whisperLastSpeechTime = Date.now();
+          }
+        };
+
+        source.connect(whisperScriptNode);
+        whisperScriptNode.connect(whisperAudioContext.destination);
+
+        // Periodically check if speech ended (silence detected after user spoke)
+        whisperAutoFinishTimer = setInterval(() => {
+          if (!isWhisperListening) return;
+          // If user spoke and there has been 1.1s of silence, auto-transcribe!
+          if (whisperLastSpeechTime > 0 && Date.now() - whisperLastSpeechTime > 1100) {
+            finishAndTranscribeWhisper();
+          }
+        }, 200);
+
+      } catch (err) {
+        console.warn('Microphone recording error:', err);
+        if (drawerInput) drawerInput.placeholder = "Microphone unavailable. Type your task and press Enter...";
+        stopVoiceToText();
+      }
+    }
+
+    async function finishAndTranscribeWhisper() {
+      if (!isWhisperListening) return;
+      isWhisperListening = false;
+
+      const drawerInput = document.getElementById('gemini-drawer-input');
+      const drawerWave = document.getElementById('drawer-voice-wave');
+      const drawerMic = document.getElementById('btn-drawer-mic');
+
+      if (drawerWave) drawerWave.style.display = 'none';
+      if (drawerMic) drawerMic.classList.remove('active');
+      if (drawerInput) drawerInput.placeholder = '⚡ Transcribing with Local Whisper AI...';
+
+      // Build merged Float32 buffer
+      const totalSamples = whisperAudioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+      if (totalSamples < 16000 * 0.4) {
+        stopVoiceToText();
         return;
       }
 
-      // Web Speech API Fallback
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRec) {
-        if (drawerInput) drawerInput.placeholder = "Microphone unavailable. Type your task and press Enter...";
+      const merged = new Float32Array(totalSamples);
+      let offset = 0;
+      for (const chunk of whisperAudioChunks) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      cleanupWhisperAudio();
+
+      if (!window.tesseractNative || !window.tesseractNative.transcribeAudio) {
+        if (drawerInput) drawerInput.placeholder = 'Type your command and press Enter...';
         return;
       }
 
       try {
-        activeVoiceRecognizer = new SpeechRec();
-        activeVoiceRecognizer.continuous = true;
-        activeVoiceRecognizer.interimResults = true;
-        activeVoiceRecognizer.lang = 'en-US';
+        const res = await window.tesseractNative.transcribeAudio(Array.from(merged));
 
-        activeVoiceRecognizer.onresult = (e) => {
-          if (!isListeningContinuously) return;
-          let interimTranscript = '';
-          let finalTranscript = '';
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (e.results[i].isFinal) {
-              finalTranscript += e.results[i][0].transcript;
-            } else {
-              interimTranscript += e.results[i][0].transcript;
-            }
+        if (!res || !res.success || !res.text || !res.text.trim()) {
+          if (drawerInput) drawerInput.placeholder = "Couldn't hear clearly. Hold [T] to try again or type below.";
+          return;
+        }
+
+        const recognized = res.text.trim();
+
+        // Show recognized text in drawer input
+        if (drawerInput) drawerInput.value = recognized;
+
+        // ─────────────────────────────────────────────────────────
+        // CONFIRM TOAST — shows what Whisper heard for 2.5 seconds
+        // User can hit Cancel if transcription is wrong
+        // ─────────────────────────────────────────────────────────
+        const CONFIRM_MS = 2500;
+        let cancelled = false;
+        let execTimer = null;
+
+        // Remove any leftover toast
+        document.getElementById('whisper-confirm-toast')?.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'whisper-confirm-toast';
+        toast.style.cssText = [
+          'position:fixed',
+          'bottom:120px',
+          'left:50%',
+          'transform:translateX(-50%)',
+          'background:rgba(10,10,26,0.97)',
+          'border:1.5px solid #6366f1',
+          'border-radius:18px',
+          'padding:16px 20px',
+          'z-index:999999',
+          'display:flex',
+          'align-items:center',
+          'gap:18px',
+          'box-shadow:0 8px 48px rgba(99,102,241,0.45)',
+          'font-family:Inter,system-ui,sans-serif',
+          'max-width:540px',
+          'min-width:300px',
+          'backdrop-filter:blur(20px)'
+        ].join(';');
+
+        toast.innerHTML = `
+          <div style="flex:1;overflow:hidden">
+            <div style="font-size:10px;color:#818cf8;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px">🎙️ Whisper heard</div>
+            <div style="font-size:15px;color:#f0f0ff;font-weight:600;line-height:1.4;word-break:break-word">"${recognized}"</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0">
+            <button id="whisper-cancel-btn"
+              style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.45);color:#f87171;
+                     border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;
+                     transition:background 0.15s">
+              ✕ Cancel
+            </button>
+            <div style="width:80px;height:3px;background:rgba(99,102,241,0.2);border-radius:4px;overflow:hidden">
+              <div id="whisper-countdown-bar"
+                style="height:100%;width:100%;background:linear-gradient(90deg,#6366f1,#a78bfa);
+                       transition:width ${CONFIRM_MS}ms linear"></div>
+            </div>
+            <span id="whisper-countdown-label" style="font-size:10px;color:#6b7280">Executing in 2s…</span>
+          </div>
+        `;
+        document.body.appendChild(toast);
+
+        // Animate bar from 100% → 0%
+        requestAnimationFrame(() => {
+          const bar = document.getElementById('whisper-countdown-bar');
+          if (bar) bar.style.width = '0%';
+        });
+
+        // Countdown label ticks
+        let secsLeft = Math.ceil(CONFIRM_MS / 1000);
+        const labelEl = document.getElementById('whisper-countdown-label');
+        const labelInterval = setInterval(() => {
+          secsLeft = Math.max(0, secsLeft - 1);
+          if (labelEl) labelEl.textContent = secsLeft > 0 ? `Executing in ${secsLeft}s…` : 'Executing…';
+        }, 1000);
+
+        // Cancel button
+        document.getElementById('whisper-cancel-btn')?.addEventListener('click', () => {
+          cancelled = true;
+          clearTimeout(execTimer);
+          clearInterval(labelInterval);
+          toast.remove();
+          // Re-open drawer, put text back in input for the user to correct
+          openGeminiDrawerVisually();
+          activateGeminiInputAndVoice(false);
+          if (drawerInput) {
+            drawerInput.value = recognized;
+            drawerInput.placeholder = 'Edit the text below and press Enter, or hold [T] to re-speak.';
+            drawerInput.focus();
+            drawerInput.select();
           }
+        });
 
-          const currentText = finalTranscript || interimTranscript;
-          if (drawerInput && currentText) {
-            drawerInput.value = currentText;
-          }
+        // Auto-execute after countdown
+        execTimer = setTimeout(() => {
+          if (cancelled) return;
+          clearInterval(labelInterval);
+          toast.remove();
+          closeGeminiDrawer(true);
+          executeRealAgentTask(recognized, true);
+        }, CONFIRM_MS);
 
-          if (finalTranscript.trim()) {
-            stopVoiceToText();
-            closeGeminiDrawer(true);
-            executeRealAgentTask(finalTranscript.trim(), true);
-          }
-        };
-
-        activeVoiceRecognizer.onerror = (e) => {
-          console.warn('Web speech error:', e.error);
-        };
-
-        activeVoiceRecognizer.onend = () => {
-          if (isListeningContinuously) {
-            try { activeVoiceRecognizer.start(); } catch (_) {}
-          }
-        };
-
-        activeVoiceRecognizer.start();
       } catch (err) {
-        console.warn('Speech recognition start failed:', err);
+        console.error('Local Whisper transcription error:', err);
+        if (drawerInput) drawerInput.placeholder = 'Type your command and press Enter...';
       }
     }
 
@@ -5214,6 +5350,27 @@
           ev.preventDefault();
           smartSearchAndExecute(ev.url, false);
         });
+
+        // ── FOCUS RECLAIM: After Tesseract navigates, webview re-steals focus when
+        // the page finishes loading. We fight it back so [T] hold works immediately.
+        // Only runs when tesseractJustNavigated flag is set (not on normal user browsing).
+        function reclaimFocusFromWebview() {
+          if (!window._tesseractJustNavigated) return;
+          window._tesseractJustNavigated = false;
+          try { mainWv.blur(); } catch (_) {}
+          // Also blur via document.activeElement in case mainWv isn't the focused element
+          if (document.activeElement && document.activeElement !== document.body) {
+            try { document.activeElement.blur(); } catch (_) {}
+          }
+          document.body.focus();
+          // IPC call to ensure Electron BrowserWindow itself has OS-level focus
+          if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
+            window.tesseractNative.refocusMainWindow().catch(() => {});
+          }
+        }
+        mainWv.addEventListener('dom-ready', reclaimFocusFromWebview);
+        mainWv.addEventListener('did-finish-load', reclaimFocusFromWebview);
+        mainWv.addEventListener('did-stop-loading', reclaimFocusFromWebview);
       }
 
       // ESC & ENTER KEY MODAL / DRAWER HANDLERS
@@ -5325,9 +5482,11 @@
         if (geminiBottomDrawer && geminiBottomDrawer.classList.contains('open')) {
           return;
         }
-        if (holdTimer || holdSummonTriggered) return;
-        holdTimer = true;
+        // Defensive reset: if holdSummonTriggered got stuck true (e.g. from a missed keyup),
+        // reset it so the next [T] hold always works.
+        if (holdTimer) return;
         holdSummonTriggered = false;
+        holdTimer = true;
         holdStartTime = Date.now();
 
         const holdIndicator = document.getElementById('hold-indicator');
@@ -5347,11 +5506,12 @@
             // Open drawer visually without focusing yet (prevents tttttt)
             openGeminiDrawerVisually();
 
-            // Blur any active webview so keystrokes don't leak into webpage
-            const wv = document.getElementById('webview');
-            if (wv && typeof wv.blur === 'function') {
-              try { wv.blur(); } catch (_) {}
-            }
+            // Blur whatever element currently has focus (webview or anything else)
+            try {
+              if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+              }
+            } catch (_) {}
           } else {
             holdAnimFrame = requestAnimationFrame(updateHoldProgress);
           }
@@ -5391,10 +5551,14 @@
 
       document.getElementById('btn-close-gemini-drawer')?.addEventListener('click', () => closeGeminiDrawer(true));
 
-      // Mic Button click in bottom drawer to toggle listening
+      // Mic Button click in bottom drawer to toggle listening / transcribe
       document.getElementById('btn-drawer-mic')?.addEventListener('click', () => {
-        if (isListeningContinuously) {
-          stopVoiceToText();
+        if (isWhisperListening) {
+          if (whisperLastSpeechTime > 0) {
+            finishAndTranscribeWhisper();
+          } else {
+            stopVoiceToText();
+          }
         } else {
           startVoiceToText();
         }
@@ -5416,7 +5580,7 @@
           if (val) executeRealAgentTask(val, true);
         } else if (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Meta') {
           // Immediately stop voice listening on first keyboard keypress and focus on typing!
-          if (isListeningContinuously) {
+          if (isWhisperListening) {
             stopVoiceToText();
           }
         }

@@ -254,98 +254,50 @@ ipcMain.handle('download-url-resource', async (_event, url: string) => {
   }
 });
 
-// Continuous Native Voice Recognition Engine (Windows System.Speech SAPI)
-let speechProcess: ChildProcess | null = null;
+// Local Whisper Automatic Speech Recognition Engine (OpenAI Whisper ONNX)
+// Uses whisper-base.en for dramatically better accuracy vs tiny
+let whisperPipelinePromise: Promise<any> | null = null;
 
-function stopNativeVoiceListening() {
-  if (speechProcess) {
-    try {
-      speechProcess.kill();
-    } catch (_) {}
-    speechProcess = null;
+async function getWhisperPipeline() {
+  if (!whisperPipelinePromise) {
+    const { pipeline } = await import('@xenova/transformers');
+    // whisper-base.en: ~140MB, ~2x more accurate than tiny.en, still fast on CPU
+    whisperPipelinePromise = pipeline('automatic-speech-recognition', 'Xenova/whisper-base.en');
   }
+  return whisperPipelinePromise;
 }
 
-function startNativeVoiceListening() {
-  stopNativeVoiceListening();
+// Pre-warm the Whisper pipeline in background on launch so transcription is instantaneous
+getWhisperPipeline().catch((err) => console.warn('Whisper pre-warm notice:', err));
 
-  const psScript = `
-Add-Type -AssemblyName System.Speech
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$r = New-Object System.Speech.Recognition.SpeechRecognitionEngine
-try {
-  $r.SetInputToDefaultAudioDevice()
-  $g = New-Object System.Speech.Recognition.DictationGrammar
-  $r.LoadGrammar($g)
-
-  Register-ObjectEvent -InputObject $r -EventName SpeechHypothesized -Action {
-    if ($EventArgs.Result.Text) {
-      [Console]::WriteLine("HYPOTHESIS:" + $EventArgs.Result.Text)
-    }
-  } | Out-Null
-
-  Register-ObjectEvent -InputObject $r -EventName SpeechRecognized -Action {
-    if ($EventArgs.Result.Text) {
-      [Console]::WriteLine("RECOGNIZED:" + $EventArgs.Result.Text)
-    }
-  } | Out-Null
-
-  $r.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)
-  [Console]::WriteLine("LISTENING_ACTIVE")
-
-  while ($true) {
-    Start-Sleep -Milliseconds 150
+ipcMain.handle('transcribe-audio', async (_event, audioData: number[]) => {
+  if (!audioData || audioData.length === 0) {
+    return { success: false, error: 'No audio data' };
   }
-} catch {
-  [Console]::WriteLine("ERROR:" + $_.Exception.Message)
-}
-`;
-
   try {
-    speechProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psScript]);
-
-    speechProcess.stdout?.on('data', (chunk) => {
-      const text = chunk.toString();
-      const lines = text.split(/\\r?\\n/);
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('HYPOTHESIS:')) {
-          const val = trimmed.slice(11).trim();
-          if (mainWindow && !mainWindow.isDestroyed() && val) {
-            mainWindow.webContents.send('voice-hypothesis', val);
-          }
-        } else if (trimmed.startsWith('RECOGNIZED:')) {
-          const val = trimmed.slice(11).trim();
-          if (mainWindow && !mainWindow.isDestroyed() && val) {
-            mainWindow.webContents.send('voice-recognized', val);
-          }
-        }
-      }
+    const transcriber = await getWhisperPipeline();
+    const float32 = new Float32Array(audioData);
+    const output = await transcriber(float32, {
+      language: 'english',
+      task: 'transcribe',
     });
-
-    speechProcess.stderr?.on('data', (err) => {
-      console.warn('Speech recognition warning:', err.toString());
-    });
-
-    speechProcess.on('exit', () => {
-      speechProcess = null;
-    });
-  } catch (err) {
-    console.error('Failed to start native voice recognition:', err);
+    const text = (output?.text || '').trim();
+    return { success: true, text };
+  } catch (err: any) {
+    console.error('Whisper transcription error:', err);
+    return { success: false, error: err.message };
   }
-}
-
-ipcMain.handle('start-voice-listening', async () => {
-  startNativeVoiceListening();
-  return { success: true };
 });
 
-ipcMain.handle('stop-voice-listening', async () => {
-  stopNativeVoiceListening();
+// Refocus the main Electron window so [T] hold works again after a webview navigation
+ipcMain.handle('refocus-main-window', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  }
   return { success: true };
 });
 
 app.on('will-quit', () => {
-  stopNativeVoiceListening();
+  // nothing to clean up for Whisper; onnxruntime handles its own lifecycle
 });
-

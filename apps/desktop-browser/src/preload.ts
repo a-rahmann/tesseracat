@@ -20,5 +20,7 @@ import { ipcRenderer } from 'electron';
   },
   onVoiceRecognized: (callback: (text: string) => void) => {
     ipcRenderer.on('voice-recognized', (_evt, text) => callback(text));
-  }
+  },
+  transcribeAudio: (audioData: number[]) => ipcRenderer.invoke('transcribe-audio', audioData),
+  refocusMainWindow: () => ipcRenderer.invoke('refocus-main-window')
 };
