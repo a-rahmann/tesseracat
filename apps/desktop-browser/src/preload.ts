@@ -23,5 +23,6 @@ import { ipcRenderer } from 'electron';
   },
   transcribeAudio: (audioData: number[]) => ipcRenderer.invoke('transcribe-audio', audioData),
   refocusMainWindow: () => ipcRenderer.invoke('refocus-main-window'),
-  setApiKey: (key: string) => ipcRenderer.invoke('set-api-key', key)
+  setApiKey: (key: string) => ipcRenderer.invoke('set-api-key', key),
+  setLlmConfig: (config: any) => ipcRenderer.invoke('set-llm-config', config)
 };

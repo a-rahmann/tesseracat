@@ -185,8 +185,19 @@ app.on('window-all-closed', () => {
 
 // IPC Handlers
 ipcMain.handle('set-api-key', async (_event, apiKey: string) => {
-  if (orchestrator && typeof (orchestrator as any).setApiKey === 'function') {
-    (orchestrator as any).setApiKey(apiKey);
+  if (orchestrator && (orchestrator as any).llmProvider) {
+    (orchestrator as any).llmProvider.setApiKey(apiKey);
+  }
+  return { success: true };
+});
+
+ipcMain.handle('set-llm-config', async (_event, { apiKey, localUrl, modelName, strategy }: any) => {
+  if (orchestrator && (orchestrator as any).llmProvider) {
+    if (apiKey !== undefined) (orchestrator as any).llmProvider.setApiKey(apiKey);
+    if (localUrl !== undefined || modelName !== undefined) {
+      (orchestrator as any).llmProvider.setLocalConfig(localUrl || 'http://localhost:11434', modelName || 'gemma3');
+    }
+    if (strategy !== undefined) (orchestrator as any).llmProvider.setRoutingStrategy(strategy);
   }
   return { success: true };
 });
