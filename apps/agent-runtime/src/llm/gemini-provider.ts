@@ -17,7 +17,7 @@ export class GeminiLLMProvider {
   constructor(
     apiKey = '',
     localLlmUrl = 'http://localhost:11434',
-    modelName = 'gemma3',
+    modelName = 'gemma3:4b',
     strategy: RoutingStrategy = 'HYBRID_AUTO'
   ) {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY || '';
@@ -125,29 +125,38 @@ Return ONLY valid JSON matching this schema:
    * Execute inference against Local Gemma 3 (Ollama or LM Studio OpenAI format)
    */
   private async callLocalGemma(prompt: string): Promise<LLMPlanStep[] | null> {
-    // 1. Try Ollama native endpoint
-    try {
-      const ollamaRes = await fetch(`${this.localLlmUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this.modelName, // 'gemma3', 'gemma:2b', 'gemma:7b'
-          prompt: prompt,
-          format: 'json',
-          stream: false,
-        }),
-      });
-      if (ollamaRes.ok) {
-        const oData = await ollamaRes.json();
-        if (oData.response) {
-          const steps = JSON.parse(oData.response);
-          if (Array.isArray(steps) && steps.length > 0) {
-            return steps;
+    // 1. Try Ollama native endpoint with requested model & fallback variants
+    const candidateModels = [this.modelName, 'gemma3:4b', 'gemma3', 'gemma:4b', 'gemma'];
+    const tried = new Set<string>();
+
+    for (const modelCandidate of candidateModels) {
+      if (tried.has(modelCandidate)) continue;
+      tried.add(modelCandidate);
+
+      try {
+        const ollamaRes = await fetch(`${this.localLlmUrl}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelCandidate,
+            prompt: prompt,
+            format: 'json',
+            stream: false,
+          }),
+        });
+
+        if (ollamaRes.ok) {
+          const oData = await ollamaRes.json();
+          if (oData.response) {
+            const steps = JSON.parse(oData.response);
+            if (Array.isArray(steps) && steps.length > 0) {
+              return steps;
+            }
           }
         }
+      } catch (_) {
+        // Continue trying fallback candidates or LM Studio
       }
-    } catch (_) {
-      // Ollama native endpoint not reached
     }
 
     // 2. Try LM Studio / OpenAI-compatible local server endpoint (e.g. http://localhost:1234/v1/chat/completions)
