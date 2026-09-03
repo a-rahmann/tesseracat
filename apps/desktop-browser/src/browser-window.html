@@ -4408,7 +4408,11 @@
       // 7. Save to local Task History & Trello UI
       saveTaskToHistory(promptText, 4, 'Completed');
 
-Unexpected
+      // 8. CRITICAL: Refocus main Electron window so [T] hold works again
+      if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
+        try { await window.tesseractNative.refocusMainWindow(); } catch (_) {}
+      }
+    }
 
     // Text-to-Speech (TTS) Voice Engine
     function speakTextAloud(text) {
