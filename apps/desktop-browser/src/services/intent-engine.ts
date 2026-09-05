@@ -102,7 +102,7 @@ export class IntentEngine {
     const original = raw;
 
     // Wake word variations
-    const wakeRegex = /^(?:hey\s+|hi\s+|ok\s+|hello\s+)?(?:tesseract|tesseract|tesserract|test\s*react|tashira|tashera|tasheract|tazera|tess)(?:[,.!\s]+|$)/i;
+    const wakeRegex = /^(?:hey\s+|hi\s+|ok\s+|hello\s+|yo\s+)?(?:tesseract|tesserract|tesserac|tessera|tesser\s*act|tess\s*react|test\s*react|tester\s*act|deseract|dezeract|tashira|tashera|tasheract|tazera|tess)(?:[,.!\s]+|$)/i;
     const hasWakeWord = wakeRegex.test(raw);
     raw = raw.replace(wakeRegex, '').trim();
 

@@ -1,7 +1,14 @@
 /**
- * Dedicated Low-Power Wake-Word Detector for "Hey Tesseract".
- * Operates on real-time 16kHz PCM stream without continuously running Whisper.
- * Includes confidence threshold, temporal envelope matching, and debounce cooldown.
+ * Dedicated Low-Power Voice Activity & Wake-Word Detector for "Hey Tesseract".
+ * Operates on real-time 16kHz PCM audio stream.
+ *
+ * Uses continuous Voice Activity Detection (VAD) to identify speech utterances
+ * (onset, vocal envelope, trailing silence) and maintains a 250ms pre-roll buffer
+ * so the initial consonant ("H" in "Hey") is preserved.
+ *
+ * When an utterance (0.45s - 3.5s) completes, the speech segment is emitted for
+ * Whisper phonetic verification. Pure silence and background noise (fans, clicks)
+ * never trigger Whisper.
  */
 
 export interface WakeWordConfig {
@@ -11,24 +18,34 @@ export interface WakeWordConfig {
 }
 
 export class WakeWordDetector {
-  private threshold: number;
   private debounceMs: number;
   private isEnabled: boolean;
   private lastTriggerTime = 0;
-  private slidingBuffer: Float32Array;
-  private bufferIndex = 0;
+
+  // Adaptive background noise floor tracking
+  private baselineRms = 0.008;
+
+  // 250ms pre-roll circular buffer at 16kHz (4000 samples) to catch word onsets
   private sampleRate = 16000;
-  private ambientFloor = 0.005;
+  private preRollSize = 4000;
+  private preRollBuffer: Float32Array;
+  private preRollIndex = 0;
+
+  // Utterance tracking
+  private isSpeaking = false;
+  private consecutiveSpeechFrames = 0;
+  private silenceFrames = 0;
+  private speechChunks: Float32Array[] = [];
+  private totalSpeechSamples = 0;
+
   private onWakeCallback: ((score: number, speechBuffer: Float32Array) => void) | null = null;
 
   constructor(config: WakeWordConfig = {}) {
-    this.threshold = config.threshold ?? 0.42;
-    this.debounceMs = config.debounceMs ?? 2000;
+    this.debounceMs = config.debounceMs ?? 1500;
     this.isEnabled = config.enabled ?? false;
+    this.preRollBuffer = new Float32Array(this.preRollSize);
 
-    // 1.5 second ring buffer at 16kHz (24,000 samples)
-    this.slidingBuffer = new Float32Array(this.sampleRate * 1.5);
-    console.log(`[Wake] Detector initialized (Enabled: ${this.isEnabled}, Threshold: ${this.threshold}, Debounce: ${this.debounceMs}ms)`);
+    console.log(`[Wake] Detector initialized (Enabled: ${this.isEnabled}, Debounce: ${this.debounceMs}ms)`);
   }
 
   public setEnabled(enabled: boolean): void {
@@ -40,22 +57,17 @@ export class WakeWordDetector {
   }
 
   /**
-   * Reset ring buffer, cooldown, and temporal state to prevent sticky triggers or dead states.
+   * Reset ring buffer, speech accumulators, and temporal state.
    */
   public reset(): void {
-    this.slidingBuffer.fill(0);
-    this.bufferIndex = 0;
-    this.lastTriggerTime = 0;
+    this.preRollBuffer.fill(0);
+    this.preRollIndex = 0;
+    this.isSpeaking = false;
+    this.consecutiveSpeechFrames = 0;
+    this.silenceFrames = 0;
+    this.speechChunks = [];
+    this.totalSpeechSamples = 0;
     console.log('[Wake] Ring buffer & temporal states reset');
-  }
-
-  public getLinearBuffer(): Float32Array {
-    const len = this.slidingBuffer.length;
-    const out = new Float32Array(len);
-    for (let i = 0; i < len; i++) {
-      out[i] = this.slidingBuffer[(this.bufferIndex + i) % len];
-    }
-    return out;
   }
 
   public onWakeDetected(callback: (score: number, speechBuffer: Float32Array) => void): void {
@@ -63,112 +75,114 @@ export class WakeWordDetector {
   }
 
   /**
-   * Feed incoming 16kHz PCM chunk for acoustic/phonetic envelope analysis.
+   * Feed incoming 16kHz PCM chunk for real-time VAD utterance segmentation.
    */
   public processChunk(chunk: Float32Array): void {
-    if (!this.isEnabled) return;
+    if (!this.isEnabled || !chunk || chunk.length === 0) return;
 
+    // Calculate RMS on the incoming 16kHz chunk
+    let sumSq = 0;
     for (let i = 0; i < chunk.length; i++) {
-      this.slidingBuffer[this.bufferIndex] = chunk[i];
-      this.bufferIndex = (this.bufferIndex + 1) % this.slidingBuffer.length;
+      const val = chunk[i];
+      sumSq += val * val;
     }
+    const chunkRms = Math.sqrt(sumSq / chunk.length);
 
-    // Evaluate every ~160ms (2560 samples)
-    if (this.bufferIndex % 2560 < chunk.length) {
-      this.evaluateBuffer();
-    }
-  }
+    if (!this.isSpeaking) {
+      // 1. Update ambient noise floor smoothly
+      this.baselineRms = this.baselineRms * 0.992 + chunkRms * 0.008;
 
-  private evaluateBuffer(): void {
-    const now = Date.now();
-    if (now - this.lastTriggerTime < this.debounceMs) {
-      return; // Cooldown active
-    }
-
-    const len = this.slidingBuffer.length;
-    // Divide 1.5s buffer into 6 equal slices of 250ms (4000 samples each at 16kHz)
-    const numSlices = 6;
-    const sliceSize = Math.floor(len / numSlices);
-    const sliceEnergies = new Float32Array(numSlices);
-
-    for (let s = 0; s < numSlices; s++) {
-      let sum = 0;
-      const offset = s * sliceSize;
-      for (let i = 0; i < sliceSize; i++) {
-        const idx = (this.bufferIndex + offset + i) % len;
-        const val = this.slidingBuffer[idx];
-        sum += val * val;
-      }
-      sliceEnergies[s] = Math.sqrt(sum / sliceSize);
-    }
-
-    let overallSum = 0;
-    for (let s = 0; s < numSlices; s++) overallSum += sliceEnergies[s];
-    const overallRms = overallSum / numSlices;
-
-    // Track ambient background noise floor
-    this.ambientFloor = this.ambientFloor * 0.96 + overallRms * 0.04;
-
-    // Room ambient noise floor check
-    if (overallRms < 0.005) {
-      return;
-    }
-
-    // Sliding candidate search across consecutive 4-slice groups (0-3, 1-4, 2-5)
-    // This allows "Hey Tesseract" to be detected whether spoken fast, slowly, or ending mid-buffer
-    let bestPatternScore = 0;
-
-    for (let k = 0; k <= numSlices - 4; k++) {
-      const e0 = sliceEnergies[k];     // "Hey"
-      const e1 = sliceEnergies[k + 1]; // "Tess"
-      const e2 = sliceEnergies[k + 2]; // "er"
-      const e3 = sliceEnergies[k + 3]; // "act"
-
-      const maxE = Math.max(e0, e1, e2, e3);
-      const minE = Math.min(e0, e1, e2, e3);
-      const dynamicModulation = (maxE - minE) / (maxE + 0.0001);
-
-      // Voice burst must stand out above ambient background sound
-      const minBurstPeak = Math.max(0.008, this.ambientFloor * 1.55);
-      if (maxE < minBurstPeak || dynamicModulation < 0.20) {
-        continue;
+      // 2. Store chunk into pre-roll ring buffer
+      for (let i = 0; i < chunk.length; i++) {
+        this.preRollBuffer[this.preRollIndex] = chunk[i];
+        this.preRollIndex = (this.preRollIndex + 1) % this.preRollSize;
       }
 
-      let score = 0;
+      // 3. Detect speech onset: energy must clearly exceed ambient noise
+      const speechThreshold = Math.max(0.014, this.baselineRms * 2.0);
 
-      // Pattern A: Full "Hey Tesseract" (e0: "Hey", e1: "Tess", e2: "er", e3: "act")
-      if (e0 > 0.006 && e1 > 0.006 && e3 > 0.005) {
-        const cadence = (e0 + e1 + e3) / (3 * (e2 + 0.0015));
-        if (cadence > 1.08) {
-          const syllableSymmetry = Math.min(e0, e1) / (Math.max(e0, e1) + 0.001);
-          score = Math.min(1.0, syllableSymmetry * 0.40 + (cadence - 1.0) * 0.35 + dynamicModulation * 0.25);
+      if (chunkRms > speechThreshold) {
+        this.consecutiveSpeechFrames++;
+        // Require ~20ms of sustained speech energy (approx 6-8 worklet frames)
+        if (this.consecutiveSpeechFrames >= 6) {
+          this.isSpeaking = true;
+          this.consecutiveSpeechFrames = 0;
+          this.silenceFrames = 0;
+          this.speechChunks = [];
+          this.totalSpeechSamples = 0;
+
+          // Extract linearized pre-roll buffer so the onset ('H' in 'Hey') is intact
+          const preRollLinear = new Float32Array(this.preRollSize);
+          for (let i = 0; i < this.preRollSize; i++) {
+            preRollLinear[i] = this.preRollBuffer[(this.preRollIndex + i) % this.preRollSize];
+          }
+          this.speechChunks.push(preRollLinear);
+          this.totalSpeechSamples += this.preRollSize;
+
+          const copy = new Float32Array(chunk.length);
+          copy.set(chunk);
+          this.speechChunks.push(copy);
+          this.totalSpeechSamples += chunk.length;
+
+          console.log(`[Wake] Speech onset detected (RMS: ${chunkRms.toFixed(4)}, Baseline: ${this.baselineRms.toFixed(4)})`);
         }
+      } else {
+        this.consecutiveSpeechFrames = 0;
+      }
+    } else {
+      // While speaking: accumulate PCM chunks
+      const copy = new Float32Array(chunk.length);
+      copy.set(chunk);
+      this.speechChunks.push(copy);
+      this.totalSpeechSamples += chunk.length;
+
+      // Check for silence to detect end-of-phrase
+      const silenceFloor = Math.max(0.008, this.baselineRms * 1.3);
+      if (chunkRms < silenceFloor) {
+        this.silenceFrames++;
+      } else {
+        this.silenceFrames = 0;
       }
 
-      // Pattern B: Fast or direct "Tesseract" (onset at e1: "Tess", dip at e2: "er", rise at e3: "act")
-      if (score < this.threshold && e1 > 0.007 && e3 > 0.006) {
-        const cadenceB = (e1 + e3) / (2 * (e2 + 0.0015));
-        if (cadenceB > 1.10) {
-          const syllableSymmetryB = Math.min(e1, e3) / (Math.max(e1, e3) + 0.001);
-          const scoreB = Math.min(1.0, syllableSymmetryB * 0.40 + (cadenceB - 1.0) * 0.35 + dynamicModulation * 0.25);
-          if (scoreB > score) score = scoreB;
+      // Trailing silence timeout (~380ms of silence, ~130 frames at ~46 samples each)
+      // Or safety timeout if user has spoken for > 3.2s
+      const isTrailingSilence = this.silenceFrames >= 130;
+      const isMaxDuration = this.totalSpeechSamples >= this.sampleRate * 3.5;
+
+      if (isTrailingSilence || isMaxDuration) {
+        const durationSec = this.totalSpeechSamples / this.sampleRate;
+        console.log(`[Wake] Utterance completed (${durationSec.toFixed(2)}s, Silence: ${this.silenceFrames} frames, MaxDur: ${isMaxDuration})`);
+
+        // Check if utterance is long enough to contain "Hey Tesseract" (minimum 0.45s)
+        if (this.totalSpeechSamples >= this.sampleRate * 0.45) {
+          const now = Date.now();
+          if (now - this.lastTriggerTime >= this.debounceMs) {
+            this.lastTriggerTime = now;
+
+            // Merge all chunks into one unified Float32 buffer
+            const merged = new Float32Array(this.totalSpeechSamples);
+            let offset = 0;
+            for (const c of this.speechChunks) {
+              merged.set(c, offset);
+              offset += c.length;
+            }
+
+            if (this.onWakeCallback) {
+              this.onWakeCallback(1.0, merged);
+            }
+          } else {
+            console.log('[Wake] Utterance debounced (cooldown active)');
+          }
+        } else {
+          console.log('[Wake] Discarded short noise burst (< 0.45s)');
         }
-      }
 
-      if (score > bestPatternScore) {
-        bestPatternScore = score;
-      }
-    }
-
-    if (bestPatternScore > 0.15) {
-      console.log(`[Wake] Acoustic score: ${bestPatternScore.toFixed(2)} (RMS: ${overallRms.toFixed(4)})`);
-    }
-
-    if (bestPatternScore >= this.threshold) {
-      this.lastTriggerTime = now;
-      console.log(`[Wake] ⚡ Candidate detected (Score: ${bestPatternScore.toFixed(2)}). Verifying phonetically...`);
-      if (this.onWakeCallback) {
-        this.onWakeCallback(bestPatternScore, this.getLinearBuffer());
+        // Reset utterance tracking back to listening
+        this.isSpeaking = false;
+        this.consecutiveSpeechFrames = 0;
+        this.silenceFrames = 0;
+        this.speechChunks = [];
+        this.totalSpeechSamples = 0;
       }
     }
   }
