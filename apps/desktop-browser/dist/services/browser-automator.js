@@ -145,6 +145,28 @@ class BrowserAutomator {
             return { success: false, error: err.message };
         }
     }
+    async click(options) {
+        if (options.selector) {
+            return this.clickElement(options.selector);
+        }
+        if (options.elementId) {
+            console.log(`[Browser] click by elementId started: "${options.elementId}"`);
+            const script = `
+        (() => {
+          const el = document.querySelector('[data-tesseract-id="${options.elementId}"]') || document.getElementById('${options.elementId}');
+          if (!el) return false;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+          el.click();
+          return true;
+        })()
+      `;
+            const result = await this.executeWhenReady(script);
+            return { success: Boolean(result), result };
+        }
+        return { success: false, error: 'No selector or elementId provided' };
+    }
     async clickElement(selector) {
         console.log(`[Browser] clickElement started: "${selector}"`);
         const script = `

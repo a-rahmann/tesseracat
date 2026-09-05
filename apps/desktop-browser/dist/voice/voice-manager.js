@@ -240,10 +240,8 @@ class VoiceManager {
                 this.vad.processChunk(pcm16k);
                 break;
             case 'SPEAKING':
-                // User interruption detection: if loud speech occurs during TTS, check for "Stop"
-                if (rms > 0.07) {
-                    this.checkInterruptionAudio(pcm16k);
-                }
+                // Microphone audio during TTS is ignored to prevent self-interruption from speaker playback.
+                // Users can interrupt anytime via Escape key, push-to-talk hotkey, or clicking the mic.
                 break;
             default:
                 break;
@@ -420,15 +418,6 @@ class VoiceManager {
             }
         }
         this.resetToWakeListening();
-    }
-    checkInterruptionAudio(chunk) {
-        let sumSq = 0;
-        for (let i = 0; i < chunk.length; i++)
-            sumSq += chunk[i] * chunk[i];
-        const rms = Math.sqrt(sumSq / chunk.length);
-        if (rms > 0.08) {
-            this.triggerInterruption();
-        }
     }
     setupGlobalShortcuts() {
         if (typeof window === 'undefined')

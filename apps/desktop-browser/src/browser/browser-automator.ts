@@ -163,6 +163,17 @@ export class BrowserAutomator {
     return { success: false };
   }
 
+  public async executeScript<T = any>(script: string): Promise<T | null> {
+    const webview = this.getActiveWebview();
+    if (!webview) return null;
+    try {
+      return await webview.executeJavaScript(script);
+    } catch (err) {
+      console.warn('[BrowserAutomator] executeScript error:', err);
+      return null;
+    }
+  }
+
   public async wait(ms: number): Promise<void> {
     return new Promise(r => setTimeout(r, ms));
   }

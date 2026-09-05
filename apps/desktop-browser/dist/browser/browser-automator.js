@@ -154,6 +154,18 @@ class BrowserAutomator {
         }
         return { success: false };
     }
+    async executeScript(script) {
+        const webview = this.getActiveWebview();
+        if (!webview)
+            return null;
+        try {
+            return await webview.executeJavaScript(script);
+        }
+        catch (err) {
+            console.warn('[BrowserAutomator] executeScript error:', err);
+            return null;
+        }
+    }
     async wait(ms) {
         return new Promise(r => setTimeout(r, ms));
     }

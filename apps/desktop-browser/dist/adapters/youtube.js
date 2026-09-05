@@ -31,18 +31,37 @@ class YouTubeAdapter {
         return res.success;
     }
     static async playResult(index = 1) {
-        const selector = `ytd-video-renderer:nth-of-type(${index}) a#thumbnail, ytd-rich-item-renderer:nth-of-type(${index}) a#thumbnail, a[href*="/watch"]:nth-of-type(${index})`;
-        const res = await browser_automator_js_1.BrowserAutomator.getInstance().click({ selector });
-        if (!res.success)
-            return false;
-        // Wait for /watch page and verify video playback
-        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('video', 5000);
+        const automator = browser_automator_js_1.BrowserAutomator.getInstance();
         const media = media_controller_js_1.MediaController.getInstance();
-        let isPlaying = await media.verifyPlaying(3000);
+        // 1. Wait for video results to render on YouTube
+        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('ytd-video-renderer, ytd-rich-item-renderer, a#video-title', 5000);
+        // 2. Locate and navigate directly to target video link
+        const selectScript = `
+      (() => {
+        const links = Array.from(document.querySelectorAll('ytd-video-renderer a#video-title, ytd-video-renderer a#thumbnail, a#video-title, a[href*="/watch"]'))
+          .filter(el => el.getAttribute('href') && el.getAttribute('href').includes('/watch'));
+        const target = links[${Math.max(0, index - 1)}] || links[0];
+        if (target) {
+          const href = target.getAttribute('href');
+          target.click();
+          return { clicked: true, href };
+        }
+        return { clicked: false };
+      })()
+    `;
+        const res = await automator.executeScript(selectScript);
+        console.log('[YouTubeAdapter] Clicked video search result:', res);
+        if (res?.clicked && res?.href) {
+            const fullUrl = res.href.startsWith('http') ? res.href : `https://www.youtube.com${res.href}`;
+            await automator.navigate(fullUrl);
+        }
+        // 3. Wait for video element and verify playback
+        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('video', 6000);
+        let isPlaying = await media.verifyPlaying(3500);
         // If autoplay was blocked by browser, trigger play directly
         if (!isPlaying) {
             await media.play();
-            isPlaying = await media.verifyPlaying(2000);
+            isPlaying = await media.verifyPlaying(2500);
         }
         return isPlaying;
     }

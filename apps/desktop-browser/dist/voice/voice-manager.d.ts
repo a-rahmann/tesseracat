@@ -77,7 +77,6 @@ export declare class VoiceManager {
     resetVoiceSession(): void;
     resetToWakeListening(): void;
     triggerInterruption(): void;
-    private checkInterruptionAudio;
     private setupGlobalShortcuts;
 }
 //# sourceMappingURL=voice-manager.d.ts.map

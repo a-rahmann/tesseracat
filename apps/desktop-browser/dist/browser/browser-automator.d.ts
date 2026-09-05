@@ -43,6 +43,7 @@ export declare class BrowserAutomator {
     closeCurrentTab(): Promise<{
         success: boolean;
     }>;
+    executeScript<T = any>(script: string): Promise<T | null>;
     wait(ms: number): Promise<void>;
 }
 //# sourceMappingURL=browser-automator.d.ts.map

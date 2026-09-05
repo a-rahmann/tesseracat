@@ -22,6 +22,10 @@ export declare class BrowserAutomator {
     goBack(): Promise<AutomatorResult>;
     goForward(): Promise<AutomatorResult>;
     reload(): Promise<AutomatorResult>;
+    click(options: {
+        selector?: string;
+        elementId?: string;
+    }): Promise<AutomatorResult>;
     clickElement(selector: string): Promise<AutomatorResult>;
     playFirstMedia(): Promise<AutomatorResult<string>>;
     playOrdinalMedia(index?: number): Promise<AutomatorResult<string>>;
