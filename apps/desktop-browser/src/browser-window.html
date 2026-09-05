@@ -930,17 +930,23 @@
 
   <script>
     const path = require('path');
-    const {
-      VoiceManager,
-      BrowserAutomator,
-      AIExecutionCoordinator,
-      IntentEngine
-    } = require(path.join(__dirname, '../dist/services/index.js'));
+    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine;
+    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null;
 
-    const voiceManager = VoiceManager.getInstance();
-    const automator = BrowserAutomator.getInstance();
-    const aiCoordinator = AIExecutionCoordinator.getInstance();
-    const intentEngine = IntentEngine.getInstance();
+    try {
+      const services = require(path.join(__dirname, '../dist/services/index.js'));
+      VoiceManager = services.VoiceManager;
+      BrowserAutomator = services.BrowserAutomator;
+      AIExecutionCoordinator = services.AIExecutionCoordinator;
+      IntentEngine = services.IntentEngine;
+
+      if (VoiceManager) voiceManager = VoiceManager.getInstance();
+      if (BrowserAutomator) automator = BrowserAutomator.getInstance();
+      if (AIExecutionCoordinator) aiCoordinator = AIExecutionCoordinator.getInstance();
+      if (IntentEngine) intentEngine = IntentEngine.getInstance();
+    } catch (err) {
+      console.error('[Tesseract Init] Error loading compiled services from dist/services/index.js:', err);
+    }
 
     // ═══════════════════════════════════════════════════════════
     // TAB MANAGEMENT & STATE
@@ -1066,7 +1072,7 @@
         renderTabs();
       }
       updateOmnibarDisplay(url);
-      intentEngine.updateCurrentUrl(url);
+      if (intentEngine) intentEngine.updateCurrentUrl(url);
     }
 
     // Expose helpers globally for automator and developer tools
@@ -1085,7 +1091,7 @@
           renderTabs();
         }
         updateOmnibarDisplay(e.url);
-        intentEngine.updateCurrentUrl(e.url);
+        if (intentEngine) intentEngine.updateCurrentUrl(e.url);
       });
 
       webviewEl.addEventListener('page-title-updated', (e) => {
@@ -1110,93 +1116,95 @@
     const omnibarWrapper = document.getElementById('omnibar-wrapper');
     let lastVoiceStatus = '';
 
-    voiceManager.subscribe((state) => {
-      const rms = state.rms || 0;
+    if (voiceManager) {
+      voiceManager.subscribe((state) => {
+        const rms = state.rms || 0;
 
-      // 1. Omnibar Soundwave Bars (The 4 dots next to mic)
-      // Visualizer dots appear ONLY when "Hey Tesseract" wake word is detected or actively recording/transcribing
-      const visContainer = document.querySelector('.visualizer-container');
-      const shouldShowVis = state.status === 'wake-detected' || state.status === 'recording' || state.status === 'transcribing';
-      if (visContainer) {
-        if (shouldShowVis) visContainer.classList.add('visible');
-        else visContainer.classList.remove('visible');
-      }
-
-      const bars = [
-        document.getElementById('vb-1'),
-        document.getElementById('vb-2'),
-        document.getElementById('vb-3'),
-        document.getElementById('vb-4')
-      ];
-      if (bars[0] && shouldShowVis) {
-        bars.forEach((b, idx) => {
-          if (!b) return;
-          if (state.status === 'transcribing') {
-            b.classList.add('active');
-            b.style.height = `${5 + ((Date.now() / 150 + idx) % 3) * 4}px`;
-            b.style.borderRadius = '2px';
-          } else if (state.status === 'recording' || state.status === 'wake-detected') {
-            const h = Math.min(16, Math.max(3.5, Math.round(rms * 450 * (1 + (idx % 2) * 0.4))));
-            b.style.height = `${h}px`;
-            b.style.borderRadius = h > 4 ? '1.5px' : '50%';
-            b.classList.add('active');
-          }
-        });
-      }
-
-      // 2. Omnibar Wrapper & Mic Status Styling
-      if (omnibarWrapper) {
-        omnibarWrapper.classList.remove('wake-detected', 'recording', 'transcribing');
-        if (state.status === 'wake-detected') omnibarWrapper.classList.add('wake-detected');
-        else if (state.status === 'recording') omnibarWrapper.classList.add('recording');
-        else if (state.status === 'transcribing') omnibarWrapper.classList.add('transcribing');
-      }
-
-      const micBtn = document.getElementById('btn-mic');
-      if (micBtn) {
-        if (state.status === 'recording') micBtn.classList.add('recording');
-        else micBtn.classList.remove('recording');
-      }
-
-      // 3. Omnibar Star Spinner
-      const star = document.getElementById('omnibar-star');
-      if (star) {
-        if (state.status === 'recording' || state.status === 'transcribing') star.classList.add('spin');
-        else star.classList.remove('spin');
-      }
-
-      // 4. Omnibar Placeholder
-      const omnibarInput = document.getElementById('omnibar-input');
-      if (omnibarInput && !omnibarInput.value) {
-        if (state.status === 'wake-detected') {
-          omnibarInput.placeholder = "⚡ 'Hey Tesseract' detected! Listening for command...";
-        } else if (state.status === 'recording') {
-          omnibarInput.placeholder = "🎙️ Listening... Speak your command now...";
-        } else if (state.status === 'transcribing') {
-          omnibarInput.placeholder = "⚡ Transcribing locally with Whisper...";
-        } else {
-          omnibarInput.placeholder = "Search Google, enter URL, or ask Tesseract...";
+        // 1. Omnibar Soundwave Bars (The 4 dots next to mic)
+        // Visualizer dots appear ONLY when "Hey Tesseract" wake word is detected or actively recording/transcribing
+        const visContainer = document.querySelector('.visualizer-container');
+        const shouldShowVis = state.status === 'wake-detected' || state.status === 'recording' || state.status === 'transcribing';
+        if (visContainer) {
+          if (shouldShowVis) visContainer.classList.add('visible');
+          else visContainer.classList.remove('visible');
         }
-      }
 
-      // 5. Update Developer HUD
-      if (hudVoiceBadge) hudVoiceBadge.textContent = state.status.toUpperCase();
-      if (hudVoiceVal) hudVoiceVal.textContent = `Status: ${state.status} | RMS: ${(state.rms || 0).toFixed(4)}${state.detail ? ` (${state.detail})` : ''}`;
+        const bars = [
+          document.getElementById('vb-1'),
+          document.getElementById('vb-2'),
+          document.getElementById('vb-3'),
+          document.getElementById('vb-4')
+        ];
+        if (bars[0] && shouldShowVis) {
+          bars.forEach((b, idx) => {
+            if (!b) return;
+            if (state.status === 'transcribing') {
+              b.classList.add('active');
+              b.style.height = `${5 + ((Date.now() / 150 + idx) % 3) * 4}px`;
+              b.style.borderRadius = '2px';
+            } else if (state.status === 'recording' || state.status === 'wake-detected') {
+              const h = Math.min(16, Math.max(3.5, Math.round(rms * 450 * (1 + (idx % 2) * 0.4))));
+              b.style.height = `${h}px`;
+              b.style.borderRadius = h > 4 ? '1.5px' : '50%';
+              b.classList.add('active');
+            }
+          });
+        }
 
-      // Trigger chime strictly once on entering wake-detected state
-      if (state.status === 'wake-detected' && lastVoiceStatus !== 'wake-detected') {
-        playChime();
-      }
-      lastVoiceStatus = state.status;
-    });
+        // 2. Omnibar Wrapper & Mic Status Styling
+        if (omnibarWrapper) {
+          omnibarWrapper.classList.remove('wake-detected', 'recording', 'transcribing');
+          if (state.status === 'wake-detected') omnibarWrapper.classList.add('wake-detected');
+          else if (state.status === 'recording') omnibarWrapper.classList.add('recording');
+          else if (state.status === 'transcribing') omnibarWrapper.classList.add('transcribing');
+        }
 
-    voiceManager.onTranscription((rawText, intent) => {
-      showToast(`Heard: "${rawText}"`);
-      if (hudTranscriptVal) hudTranscriptVal.textContent = `"${rawText}"`;
-      if (hudIntentVal && intent) {
-        hudIntentVal.textContent = `Type: ${intent.type} (Conf: ${intent.confidence}) | Action: ${intent.action || '—'}`;
-      }
-    });
+        const micBtn = document.getElementById('btn-mic');
+        if (micBtn) {
+          if (state.status === 'recording') micBtn.classList.add('recording');
+          else micBtn.classList.remove('recording');
+        }
+
+        // 3. Omnibar Star Spinner
+        const star = document.getElementById('omnibar-star');
+        if (star) {
+          if (state.status === 'recording' || state.status === 'transcribing') star.classList.add('spin');
+          else star.classList.remove('spin');
+        }
+
+        // 4. Omnibar Placeholder
+        const omnibarInput = document.getElementById('omnibar-input');
+        if (omnibarInput && !omnibarInput.value) {
+          if (state.status === 'wake-detected') {
+            omnibarInput.placeholder = "⚡ 'Hey Tesseract' detected! Listening for command...";
+          } else if (state.status === 'recording') {
+            omnibarInput.placeholder = "🎙️ Listening... Speak your command now...";
+          } else if (state.status === 'transcribing') {
+            omnibarInput.placeholder = "⚡ Transcribing locally with Whisper...";
+          } else {
+            omnibarInput.placeholder = "Search Google, enter URL, or ask Tesseract...";
+          }
+        }
+
+        // 5. Update Developer HUD
+        if (hudVoiceBadge) hudVoiceBadge.textContent = state.status.toUpperCase();
+        if (hudVoiceVal) hudVoiceVal.textContent = `Status: ${state.status} | RMS: ${(state.rms || 0).toFixed(4)}${state.detail ? ` (${state.detail})` : ''}`;
+
+        // Trigger chime strictly once on entering wake-detected state
+        if (state.status === 'wake-detected' && lastVoiceStatus !== 'wake-detected') {
+          playChime();
+        }
+        lastVoiceStatus = state.status;
+      });
+
+      voiceManager.onTranscription((rawText, intent) => {
+        showToast(`Heard: "${rawText}"`);
+        if (hudTranscriptVal) hudTranscriptVal.textContent = `"${rawText}"`;
+        if (hudIntentVal && intent) {
+          hudIntentVal.textContent = `Type: ${intent.type} (Conf: ${intent.confidence}) | Action: ${intent.action || '—'}`;
+        }
+      });
+    }
 
     // Wire AI Execution Coordinator to Calm Activity Capsule
     const aiPill = document.getElementById('ai-activity-pill');
@@ -1205,36 +1213,38 @@
     const flyoutTimeline = document.getElementById('flyout-timeline');
     const flyoutTitle = document.getElementById('flyout-task-title');
 
-    aiCoordinator.subscribe((state) => {
-      if (hudExecVal) hudExecVal.textContent = `Status: ${state.status} | Action: ${state.currentAction || '—'} | Progress: ${Math.round(state.progress * 100)}%`;
+    if (aiCoordinator) {
+      aiCoordinator.subscribe((state) => {
+        if (hudExecVal) hudExecVal.textContent = `Status: ${state.status} | Action: ${state.currentAction || '—'} | Progress: ${Math.round(state.progress * 100)}%`;
 
-      if (!aiPill || !aiPillLabel) return;
+        if (!aiPill || !aiPillLabel) return;
 
-      if (state.status === 'idle') {
-        aiPill.classList.add('hidden');
-      } else {
-        aiPill.classList.remove('hidden');
-        if (state.status === 'executing' || state.status === 'thinking') {
-          aiPillLabel.textContent = state.currentAction || 'Working...';
-          if (aiPillProgress) aiPillProgress.style.width = `${Math.round(state.progress * 100)}%`;
-        } else if (state.status === 'success') {
-          aiPillLabel.textContent = '✓ Done';
-          if (aiPillProgress) aiPillProgress.style.width = '100%';
-        } else if (state.status === 'error') {
-          aiPillLabel.textContent = '⚠ Action error';
+        if (state.status === 'idle') {
+          aiPill.classList.add('hidden');
+        } else {
+          aiPill.classList.remove('hidden');
+          if (state.status === 'executing' || state.status === 'thinking') {
+            aiPillLabel.textContent = state.currentAction || 'Working...';
+            if (aiPillProgress) aiPillProgress.style.width = `${Math.round(state.progress * 100)}%`;
+          } else if (state.status === 'success') {
+            aiPillLabel.textContent = '✓ Done';
+            if (aiPillProgress) aiPillProgress.style.width = '100%';
+          } else if (state.status === 'error') {
+            aiPillLabel.textContent = '⚠ Action error';
+          }
         }
-      }
 
-      if (flyoutTitle) flyoutTitle.textContent = state.goal ? `Task: "${state.goal}"` : 'No active task.';
-      if (flyoutTimeline && state.steps && state.steps.length > 0) {
-        flyoutTimeline.innerHTML = state.steps.map(s => `
-          <div class="timeline-step ${s.status === 'ACTIVE' ? 'active' : (s.status === 'SUCCESS' ? 'complete' : '')}">
-            <div class="timeline-icon">${s.status === 'SUCCESS' ? '✓' : (s.status === 'ACTIVE' ? '●' : '○')}</div>
-            <span>${escapeHtml(s.description)}</span>
-          </div>
-        `).join('');
-      }
-    });
+        if (flyoutTitle) flyoutTitle.textContent = state.goal ? `Task: "${state.goal}"` : 'No active task.';
+        if (flyoutTimeline && state.steps && state.steps.length > 0) {
+          flyoutTimeline.innerHTML = state.steps.map(s => `
+            <div class="timeline-step ${s.status === 'ACTIVE' ? 'active' : (s.status === 'SUCCESS' ? 'complete' : '')}">
+              <div class="timeline-icon">${s.status === 'SUCCESS' ? '✓' : (s.status === 'ACTIVE' ? '●' : '○')}</div>
+              <span>${escapeHtml(s.description)}</span>
+            </div>
+          `).join('');
+        }
+      });
+    }
 
     // ═══════════════════════════════════════════════════════════
     // UI CONTROLS & SHORTCUTS
@@ -1250,10 +1260,12 @@
           // Direct URL check
           if (/^https?:\/\//i.test(val) || (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/.test(val) && !val.includes(' '))) {
             navigateWebview(val);
-          } else {
+          } else if (intentEngine && aiCoordinator) {
             // Intent classification and autonomous dispatch
             const intent = intentEngine.classify(val);
             aiCoordinator.executeIntent(intent);
+          } else {
+            navigateWebview(`https://www.google.com/search?q=${encodeURIComponent(val)}`);
           }
         }
       });

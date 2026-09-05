@@ -1,5 +1,8 @@
 node_modules/
-dist/
+packages/*/dist/
+apps/agent-runtime/dist/
+apps/extension/dist/
+!apps/desktop-browser/dist/
 .env
 .env.*
 .vscode/

@@ -8,7 +8,9 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -p apps/desktop-browser",
+    "build:browser": "tsc -p apps/desktop-browser",
+    "prestart": "npm run build:browser",
     "start": "electron apps/desktop-browser",
     "test": "node --test"
   },
