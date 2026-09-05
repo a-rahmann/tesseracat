@@ -282,6 +282,39 @@
     .tesseract-star.spin {
       animation: tesseract-spin 3s linear infinite;
     }
+    .tesseract-star.listening {
+      animation: glyph-breathe 2.4s ease-in-out infinite;
+      color: var(--accent);
+    }
+    .tesseract-star.recording {
+      animation: glyph-pulse 0.7s ease-in-out infinite alternate;
+      color: #f87171;
+    }
+    .tesseract-star.thinking {
+      animation: tesseract-spin 2s linear infinite;
+      color: #38bdf8;
+    }
+    .tesseract-star.executing {
+      animation: glyph-drift 1.2s ease-in-out infinite alternate;
+      color: #c084fc;
+    }
+    .tesseract-star.completed {
+      transform: scale(1.2);
+      color: #34d399;
+      transition: all 250ms ease;
+    }
+    @keyframes glyph-breathe {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.18); opacity: 1; filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.6)); }
+    }
+    @keyframes glyph-pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      100% { transform: scale(1.22); opacity: 1; filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.7)); }
+    }
+    @keyframes glyph-drift {
+      0% { transform: translateX(-2px) rotate(-6deg); }
+      100% { transform: translateX(2px) rotate(6deg); filter: drop-shadow(0 0 6px rgba(192, 132, 252, 0.6)); }
+    }
     @keyframes tesseract-spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
@@ -1462,11 +1495,13 @@
           else micBtn.classList.remove('recording');
         }
 
-        // 3. Omnibar Star Spinner
+        // 3. Omnibar Star Presence Glyph
         const star = document.getElementById('omnibar-star');
         if (star) {
-          if (state.status === 'recording' || state.status === 'transcribing') star.classList.add('spin');
-          else star.classList.remove('spin');
+          star.classList.remove('listening', 'recording', 'thinking', 'executing', 'completed', 'spin');
+          if (state.status === 'listening-for-wake') star.classList.add('listening');
+          else if (state.status === 'wake-detected' || state.status === 'recording') star.classList.add('recording');
+          else if (state.status === 'transcribing' || state.status === 'processing') star.classList.add('thinking');
         }
 
         // 4. Omnibar Placeholder
@@ -1516,16 +1551,35 @@
 
         if (!aiPill || !aiPillLabel) return;
 
+        const star = document.getElementById('omnibar-star');
         if (state.status === 'idle') {
           aiPill.classList.add('hidden');
+          if (star && !star.classList.contains('recording')) {
+            star.classList.remove('executing', 'thinking', 'completed');
+            star.classList.add('listening');
+          }
         } else {
           aiPill.classList.remove('hidden');
           if (state.status === 'executing' || state.status === 'thinking') {
             aiPillLabel.textContent = state.currentAction || 'Working...';
             if (aiPillProgress) aiPillProgress.style.width = `${Math.round(state.progress * 100)}%`;
+            if (star) {
+              star.classList.remove('listening', 'recording', 'completed');
+              star.classList.add(state.status === 'thinking' ? 'thinking' : 'executing');
+            }
           } else if (state.status === 'success') {
             aiPillLabel.textContent = '✓ Done';
             if (aiPillProgress) aiPillProgress.style.width = '100%';
+            if (star) {
+              star.classList.remove('executing', 'thinking', 'recording');
+              star.classList.add('completed');
+              setTimeout(() => {
+                if (star.classList.contains('completed')) {
+                  star.classList.remove('completed');
+                  star.classList.add('listening');
+                }
+              }, 2500);
+            }
           } else if (state.status === 'error') {
             aiPillLabel.textContent = '⚠ Action error';
           }

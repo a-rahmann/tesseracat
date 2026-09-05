@@ -123,6 +123,14 @@ export class AIExecutionCoordinator {
     });
   }
 
+  public stopSpeaking(): void {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    this.activeUtterances.clear();
+    VoiceManager.getInstance().setSpeakingTTS(false);
+  }
+
   /**
    * Execute an autonomous task directly from a StructuredIntent without UI intervention.
    */

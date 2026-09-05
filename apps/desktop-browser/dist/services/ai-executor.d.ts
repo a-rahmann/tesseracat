@@ -44,6 +44,7 @@ export declare class AIExecutionCoordinator {
      * Defends against Chromium Web Speech garbage collection bugs by retaining utterance refs.
      */
     speak(text: string): Promise<void>;
+    stopSpeaking(): void;
     /**
      * Execute an autonomous task directly from a StructuredIntent without UI intervention.
      */

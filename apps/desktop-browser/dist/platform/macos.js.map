@@ -1,0 +1,1 @@
+{"version":3,"file":"macos.js","sourceRoot":"","sources":["../../src/platform/macos.ts"],"names":[],"mappings":";;;AAAA;;GAEG;AACU,QAAA,aAAa,GAAG;IAC3B,KAAK,EAAE,IAAI;IACX,SAAS,EAAE,KAAK;IAChB,YAAY,EAAE,QAAiB;IAC/B,WAAW,EAAE,MAAM;IACnB,cAAc,EAAE,GAAG;IACnB,aAAa,EAAE,CAAC,GAAW,EAAE,EAAE,CAAC,KAAK,GAAG,CAAC,WAAW,EAAE,EAAE;IACxD,YAAY,EAAE,UAAU;CACzB,CAAC"}

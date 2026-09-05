@@ -1,0 +1,1 @@
+{"version":3,"file":"cancellation.d.ts","sourceRoot":"","sources":["../../src/agent/cancellation.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,qBAAa,iBAAiB;IAC5B,OAAO,CAAC,YAAY,CAAS;IAC7B,OAAO,CAAC,eAAe,CAAyB;IAEhD,IAAW,WAAW,IAAI,OAAO,CAEhC;IAEM,MAAM,IAAI,IAAI;IAYd,QAAQ,CAAC,EAAE,EAAE,MAAM,IAAI,GAAG,IAAI;IAQ9B,gBAAgB,IAAI,IAAI;CAKhC"}

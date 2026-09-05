@@ -1,0 +1,1 @@
+{"version":3,"file":"gmail.d.ts","sourceRoot":"","sources":["../../src/adapters/gmail.ts"],"names":[],"mappings":"AAAA;;GAEG;AAIH,qBAAa,YAAY;WACT,UAAU,CAAC,GAAG,EAAE,MAAM,GAAG,OAAO;WAI1B,SAAS,IAAI,OAAO,CAAC,OAAO,CAAC;WAI7B,eAAe,IAAI,OAAO,CAAC,KAAK,CAAC;QAAE,MAAM,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,MAAM,CAAA;KAAE,CAAC,CAAC;CAwB3F"}

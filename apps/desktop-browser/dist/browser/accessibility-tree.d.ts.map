@@ -1,0 +1,1 @@
+{"version":3,"file":"accessibility-tree.d.ts","sourceRoot":"","sources":["../../src/browser/accessibility-tree.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,eAAO,MAAM,4BAA4B,i5EAoFxC,CAAC;AAEF,qBAAa,0BAA0B;WACvB,eAAe,CAAC,QAAQ,EAAE,GAAG,EAAE,GAAG,MAAM;CAYvD"}

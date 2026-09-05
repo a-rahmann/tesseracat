@@ -85,6 +85,13 @@ class AIExecutionCoordinator {
             window.speechSynthesis.speak(utterance);
         });
     }
+    stopSpeaking() {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        this.activeUtterances.clear();
+        voice_manager_js_1.VoiceManager.getInstance().setSpeakingTTS(false);
+    }
     /**
      * Execute an autonomous task directly from a StructuredIntent without UI intervention.
      */

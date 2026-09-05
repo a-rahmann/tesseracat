@@ -1,0 +1,1 @@
+{"version":3,"file":"windows.js","sourceRoot":"","sources":["../../src/platform/windows.ts"],"names":[],"mappings":";;;AAAA;;GAEG;AACU,QAAA,eAAe,GAAG;IAC7B,KAAK,EAAE,KAAK;IACZ,SAAS,EAAE,IAAI;IACf,YAAY,EAAE,OAAgB;IAC9B,WAAW,EAAE,SAAS;IACtB,cAAc,EAAE,MAAM;IACtB,aAAa,EAAE,CAAC,GAAW,EAAE,EAAE,CAAC,QAAQ,GAAG,CAAC,WAAW,EAAE,EAAE;IAC3D,YAAY,EAAE,gBAAgB;CAC/B,CAAC"}

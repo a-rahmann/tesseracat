@@ -1,11 +1,12 @@
 /**
  * VoiceManager: Persistent, UI-independent voice orchestrator for Tesseract.
- * Owns the single persistent microphone stream, AudioContext, AudioWorklet,
- * WakeWordDetector, sinc resampler, Whisper IPC bridge, IntentEngine, and VoiceState machine.
+ * Powered by low-latency WakeWordDetector (<300ms, no Whisper for wake),
+ * VoiceActivityDetector (300-700ms silence), sinc resampler, and permanent audio pipeline.
  *
- * CRITICAL INVARIANT:
- * Opening, closing, or re-rendering UI elements (sidebar, drawer, modal, toast)
- * CANNOT and MUST NOT touch, reset, or destroy the VoiceManager or microphone stream.
+ * CRITICAL INVARIANTS:
+ * 1. Audio stream, AudioContext, AudioWorklet are NEVER destroyed across turns.
+ * 2. Second command and 20+ consecutive commands work seamlessly.
+ * 3. User saying "Stop" interrupts TTS or active execution immediately.
  */
 import { StructuredIntent } from './intent-engine.js';
 export type VoiceStatus = 'idle' | 'listening-for-wake' | 'wake-detected' | 'recording' | 'transcribing' | 'processing' | 'tts' | 'error';
@@ -22,19 +23,14 @@ export declare class VoiceManager {
     private state;
     private capture;
     private wakeDetector;
+    private vad;
     private capturedChunks;
+    private totalCapturedSamples;
     private nativeSampleRate;
     private isCaptureActive;
     private isWakeWordActive;
     private isTTSActive;
-    private silenceTimer;
-    private initialSilenceTimer;
     private maxDurationTimer;
-    private hasSpoken;
-    private baselineRms;
-    private recordingTrigger;
-    private isVerifyingWake;
-    private commandSpeechFrames;
     private stateListeners;
     private transcriptionListeners;
     private constructor();
@@ -44,31 +40,21 @@ export declare class VoiceManager {
     onTranscription(listener: TranscriptionListener): () => void;
     private setState;
     private setRms;
-    private notifyState;
-    /**
-     * Start or ensure the persistent AudioCapture worklet is streaming.
-     */
-    ensureAudioCapture(): Promise<void>;
-    enableWakeWord(enabled: boolean): void;
+    private notifyStateListeners;
     isWakeWordEnabled(): boolean;
+    setTTSActive(active: boolean): void;
+    setSpeakingTTS(active: boolean): void;
+    /**
+     * Initialize permanent audio capture. Never torn down.
+     */
+    ensureAudioCapture(): Promise<boolean>;
     startWakeListening(): Promise<void>;
-    startPushToTalk(): Promise<void>;
-    stopRecordingAndTranscribe(): Promise<void>;
+    stopWakeListening(): void;
+    startPushToTalk(): void;
     private handleWakeDetected;
-    /**
-     * Cleanly reset voice session after every command or abort.
-     * Clears temporary recording buffers and resets the wake detector while preserving
-     * the persistent microphone stream and AudioWorklet.
-     */
+    private processAudioChunk;
+    stopRecordingAndTranscribe(): Promise<void>;
     resetVoiceSession(): void;
-    /**
-     * Notify VoiceManager when TTS speaks aloud to prevent self-triggering.
-     */
-    setSpeakingTTS(isSpeaking: boolean): void;
-    /**
-     * Setup global push-to-talk listener on window (independent of UI focus/panels).
-     */
     private setupGlobalKeyListeners;
-    private clearTimers;
 }
 //# sourceMappingURL=voice-manager.d.ts.map
