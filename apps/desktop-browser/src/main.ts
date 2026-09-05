@@ -3,6 +3,7 @@ import path from 'path';
 import { AgentOrchestrator } from '../../agent-runtime/dist/index.js';
 import { PolicyContext, TaskStep } from '../../../packages/core-types/dist/index.js';
 import { transcribeAudioBuffer, getTranscriber } from './whisper.js';
+import { OllamaSidecar } from './services/ollama-sidecar.js';
 
 // Catch EPIPE on stdout/stderr in GUI mode
 process.stdout?.on('error', (err: any) => { if (err.code === 'EPIPE') return; });
@@ -158,6 +159,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  OllamaSidecar.getInstance().ensureRunning().catch(() => {});
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -170,6 +172,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  OllamaSidecar.getInstance().stop();
 });
 
 // IPC Handlers

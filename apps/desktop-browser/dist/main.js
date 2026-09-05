@@ -7,6 +7,7 @@ const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
 const index_js_1 = require("../../agent-runtime/dist/index.js");
 const whisper_js_1 = require("./whisper.js");
+const ollama_sidecar_js_1 = require("./services/ollama-sidecar.js");
 // Catch EPIPE on stdout/stderr in GUI mode
 process.stdout?.on('error', (err) => { if (err.code === 'EPIPE')
     return; });
@@ -146,6 +147,7 @@ function createWindow() {
 }
 electron_1.app.whenReady().then(() => {
     createWindow();
+    ollama_sidecar_js_1.OllamaSidecar.getInstance().ensureRunning().catch(() => { });
     electron_1.app.on('activate', () => {
         if (electron_1.BrowserWindow.getAllWindows().length === 0) {
             createWindow();
@@ -156,6 +158,9 @@ electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
     }
+});
+electron_1.app.on('before-quit', () => {
+    ollama_sidecar_js_1.OllamaSidecar.getInstance().stop();
 });
 // IPC Handlers
 electron_1.ipcMain.handle('execute-agent-task', async (_event, { profileId = 'abdul-default', goal = '', contextData = {} }) => {
