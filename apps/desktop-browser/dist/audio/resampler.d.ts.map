@@ -1,1 +1,1 @@
-{"version":3,"file":"resampler.d.ts","sourceRoot":"","sources":["../../src/audio/resampler.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,wBAAsB,aAAa,CACjC,WAAW,EAAE,YAAY,EACzB,kBAAkB,EAAE,MAAM,GACzB,OAAO,CAAC,YAAY,CAAC,CA8CvB"}
+{"version":3,"file":"resampler.d.ts","sourceRoot":"","sources":["../../src/audio/resampler.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,wBAAsB,aAAa,CACjC,WAAW,EAAE,YAAY,EACzB,kBAAkB,EAAE,MAAM,GACzB,OAAO,CAAC,YAAY,CAAC,CAsCvB"}

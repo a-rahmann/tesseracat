@@ -15,8 +15,8 @@ const audio_capture_js_1 = require("../audio/audio-capture.js");
 const resampler_js_1 = require("../audio/resampler.js");
 const wake_word_js_1 = require("../voice/wake-word.js");
 const vad_js_1 = require("../voice/vad.js");
-const intent_engine_js_1 = require("./intent-engine.js");
 const ai_executor_js_1 = require("./ai-executor.js");
+const agent_runtime_js_1 = require("../agent/agent-runtime.js");
 class VoiceManager {
     static instance = null;
     state = { status: 'idle', rms: 0 };
@@ -266,18 +266,20 @@ class VoiceManager {
                 this.resetVoiceSession();
                 return;
             }
-            const intent = intent_engine_js_1.IntentEngine.getInstance().classify(rawText);
-            // Notify listeners
+            // Notify UI transcription listeners
             for (const listener of this.transcriptionListeners) {
                 try {
-                    listener(rawText, intent);
+                    listener(rawText);
                 }
                 catch (err) {
                     console.error('[VoiceManager] Error in transcription listener:', err);
                 }
             }
-            // Automatically execute through AI coordinator
-            ai_executor_js_1.AIExecutionCoordinator.getInstance().executeIntent(intent).catch(() => { });
+            // Authoritative Autonomous Dispatch: Action != Search, Never Default to Google!
+            console.log(`[VoiceManager] Dispatching command to AgentRuntime: "${rawText}"`);
+            agent_runtime_js_1.AgentRuntime.getInstance().handleUserCommand(rawText).catch((err) => {
+                console.error('[VoiceManager] Error executing command via AgentRuntime:', err);
+            });
         }
         catch (err) {
             console.error('[VoiceManager] Transcription error:', err);

@@ -1099,8 +1099,8 @@
 
   <script>
     const path = require('path');
-    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore, TabSessionManager;
-    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null, tabSessionManager = null;
+    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore, TabSessionManager, AgentRuntime;
+    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null, tabSessionManager = null, agentRuntime = null;
 
     try {
       const services = require(path.join(__dirname, '../dist/services/index.js'));
@@ -1110,6 +1110,7 @@
       IntentEngine = services.IntentEngine;
       UserMemoryStore = services.UserMemoryStore;
       TabSessionManager = services.TabSessionManager;
+      AgentRuntime = services.AgentRuntime;
 
       if (VoiceManager) voiceManager = VoiceManager.getInstance();
       if (BrowserAutomator) automator = BrowserAutomator.getInstance();
@@ -1117,6 +1118,7 @@
       if (IntentEngine) intentEngine = IntentEngine.getInstance();
       if (UserMemoryStore) userMemory = UserMemoryStore.getInstance();
       if (TabSessionManager) tabSessionManager = TabSessionManager.getInstance();
+      if (AgentRuntime) agentRuntime = AgentRuntime.getInstance();
     } catch (err) {
       console.error('[Tesseract Init] Error loading compiled services from dist/services/index.js:', err);
     }
@@ -1611,8 +1613,10 @@
           // Direct URL check
           if (/^https?:\/\//i.test(val) || (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/.test(val) && !val.includes(' '))) {
             navigateWebview(val);
+          } else if (agentRuntime) {
+            // Authoritative autonomous agent runtime
+            agentRuntime.handleUserCommand(val);
           } else if (intentEngine && aiCoordinator) {
-            // Intent classification and autonomous dispatch
             const intent = intentEngine.classify(val);
             aiCoordinator.executeIntent(intent);
           } else {
@@ -1629,8 +1633,12 @@
         if (e.key === 'Enter') {
           const val = startInput.value.trim();
           if (!val) return;
-          const intent = intentEngine.classify(val);
-          aiCoordinator.executeIntent(intent);
+          if (agentRuntime) {
+            agentRuntime.handleUserCommand(val);
+          } else if (intentEngine && aiCoordinator) {
+            const intent = intentEngine.classify(val);
+            aiCoordinator.executeIntent(intent);
+          }
         }
       });
     }
@@ -1639,21 +1647,16 @@
     document.querySelectorAll('.start-tile').forEach(tile => {
       tile.addEventListener('click', () => {
         const action = tile.getAttribute('data-action');
-        if (action === 'research') {
-          const intent = intentEngine.classify('search Google for artificial intelligence');
-          aiCoordinator.executeIntent(intent);
-        } else if (action === 'shop') {
-          const intent = intentEngine.classify('open Amazon');
-          aiCoordinator.executeIntent(intent);
-        } else if (action === 'watch') {
-          const intent = intentEngine.classify('open YouTube');
-          aiCoordinator.executeIntent(intent);
-        } else if (action === 'listen') {
-          const intent = intentEngine.classify('play some lofi beats');
-          aiCoordinator.executeIntent(intent);
-        } else if (action === 'navigate') {
-          const intent = intentEngine.classify('open GitHub');
-          aiCoordinator.executeIntent(intent);
+        let cmd = '';
+        if (action === 'research') cmd = 'search Google for artificial intelligence';
+        else if (action === 'shop') cmd = 'open Amazon';
+        else if (action === 'watch') cmd = 'open YouTube';
+        else if (action === 'listen') cmd = 'play some lofi beats on YouTube';
+        else if (action === 'navigate') cmd = 'open GitHub';
+
+        if (cmd) {
+          if (agentRuntime) agentRuntime.handleUserCommand(cmd);
+          else if (intentEngine && aiCoordinator) aiCoordinator.executeIntent(intentEngine.classify(cmd));
         }
       });
     });
@@ -1715,8 +1718,12 @@
       if (!input || !input.value.trim()) return;
       const text = input.value.trim();
       input.value = '';
-      const intent = intentEngine.classify(text);
-      aiCoordinator.executeIntent(intent);
+      if (agentRuntime) {
+        agentRuntime.handleUserCommand(text);
+      } else if (intentEngine && aiCoordinator) {
+        const intent = intentEngine.classify(text);
+        aiCoordinator.executeIntent(intent);
+      }
     });
 
     // Audio chime helper (reuses single context to prevent stream exhaustion)

@@ -138,6 +138,35 @@ export class BrowserPerception {
     return false;
   }
 
+  public async findMatchingElement(
+    query?: string,
+    targetType?: string,
+    ordinalIndex = 1
+  ): Promise<SnapshotElement | null> {
+    const snap = await this.getSnapshot();
+    const cleanQuery = (query || '').toLowerCase().trim();
+
+    let candidates = snap.elements;
+    if (targetType) {
+      const roleMatched = candidates.filter(el => el.role === targetType);
+      if (roleMatched.length > 0) candidates = roleMatched;
+    }
+
+    if (cleanQuery) {
+      const textMatched = candidates.filter(el => {
+        const name = (el.name || '').toLowerCase();
+        const text = (el.text || '').toLowerCase();
+        return name.includes(cleanQuery) || text.includes(cleanQuery);
+      });
+      if (textMatched.length > 0) candidates = textMatched;
+    }
+
+    if (candidates.length === 0) return null;
+
+    const idx = Math.min(candidates.length - 1, Math.max(0, ordinalIndex - 1));
+    return candidates[idx];
+  }
+
   private computeHash(url: string, title: string, elementCount: number): string {
     return `${url}::${title}::${elementCount}`;
   }

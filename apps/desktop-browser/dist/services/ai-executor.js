@@ -12,6 +12,7 @@ exports.AIExecutionCoordinator = void 0;
 const browser_automator_js_1 = require("./browser-automator.js");
 const voice_manager_js_1 = require("./voice-manager.js");
 const tab_session_manager_js_1 = require("./tab-session-manager.js");
+const agent_runtime_js_1 = require("../agent/agent-runtime.js");
 class AIExecutionCoordinator {
     static instance = null;
     state = {
@@ -25,6 +26,21 @@ class AIExecutionCoordinator {
     activeUtterances = new Set();
     constructor() {
         this.automator = browser_automator_js_1.BrowserAutomator.getInstance();
+        agent_runtime_js_1.AgentRuntime.getInstance().subscribe((agentState) => {
+            this.updateState({
+                status: agentState.status,
+                goal: agentState.goal,
+                currentAction: agentState.currentAction,
+                progress: agentState.progress,
+                steps: (agentState.steps || []).map((s, idx) => ({
+                    id: `step-${idx + 1}`,
+                    stepNumber: s.stepNumber,
+                    description: s.description,
+                    status: s.status || 'PENDING',
+                })),
+                error: agentState.error,
+            });
+        });
     }
     static getInstance() {
         if (!AIExecutionCoordinator.instance) {
@@ -98,14 +114,6 @@ class AIExecutionCoordinator {
     async executeIntent(intent) {
         if (!intent)
             return;
-        const taskId = `task-${Date.now()}`;
-        console.log(`[AI] task created (ID: ${taskId}, Type: ${intent.type}, Raw: "${intent.rawText}")`);
-        const activeTabId = typeof window !== 'undefined' && window.activeTabId ? window.activeTabId : 'default-tab';
-        tab_session_manager_js_1.TabSessionManager.getInstance().recordUserPrompt(activeTabId, intent.cleanText || intent.rawText, intent);
-        if (this.collapseTimer) {
-            clearTimeout(this.collapseTimer);
-            this.collapseTimer = null;
-        }
         // Clarification-only intents (e.g. standalone "Hey Tesseract")
         if (intent.type === 'clarification') {
             if (intent.spokenIntro) {
@@ -113,6 +121,26 @@ class AIExecutionCoordinator {
             }
             voice_manager_js_1.VoiceManager.getInstance().resetVoiceSession();
             return;
+        }
+        // Authoritative pipeline: forward directly to AgentRuntime
+        const rawText = intent.cleanText || intent.rawText;
+        if (rawText) {
+            try {
+                console.log(`[AI Coordinator] Forwarding intent to AgentRuntime: "${rawText}"`);
+                await agent_runtime_js_1.AgentRuntime.getInstance().handleUserCommand(rawText);
+                return;
+            }
+            catch (err) {
+                console.error('[AI Coordinator] AgentRuntime error during executeIntent:', err);
+            }
+        }
+        const taskId = `task-${Date.now()}`;
+        console.log(`[AI] task created (ID: ${taskId}, Type: ${intent.type}, Raw: "${intent.rawText}")`);
+        const activeTabId = typeof window !== 'undefined' && window.activeTabId ? window.activeTabId : 'default-tab';
+        tab_session_manager_js_1.TabSessionManager.getInstance().recordUserPrompt(activeTabId, intent.cleanText || intent.rawText, intent);
+        if (this.collapseTimer) {
+            clearTimeout(this.collapseTimer);
+            this.collapseTimer = null;
         }
         const steps = [
             { id: 's1', stepNumber: 1, description: `Analyze request: ${intent.type}`, status: 'SUCCESS' },

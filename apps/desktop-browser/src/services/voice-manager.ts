@@ -15,6 +15,7 @@ import { WakeWordDetector, WakeDetectionResult } from '../voice/wake-word.js';
 import { VoiceActivityDetector } from '../voice/vad.js';
 import { IntentEngine, StructuredIntent } from './intent-engine.js';
 import { AIExecutionCoordinator } from './ai-executor.js';
+import { AgentRuntime } from '../agent/agent-runtime.js';
 
 export type VoiceStatus =
   | 'idle'
@@ -317,19 +318,20 @@ export class VoiceManager {
         return;
       }
 
-      const intent = IntentEngine.getInstance().classify(rawText);
-
-      // Notify listeners
+      // Notify UI transcription listeners
       for (const listener of this.transcriptionListeners) {
         try {
-          listener(rawText, intent);
+          listener(rawText);
         } catch (err) {
           console.error('[VoiceManager] Error in transcription listener:', err);
         }
       }
 
-      // Automatically execute through AI coordinator
-      AIExecutionCoordinator.getInstance().executeIntent(intent).catch(() => {});
+      // Authoritative Autonomous Dispatch: Action != Search, Never Default to Google!
+      console.log(`[VoiceManager] Dispatching command to AgentRuntime: "${rawText}"`);
+      AgentRuntime.getInstance().handleUserCommand(rawText).catch((err) => {
+        console.error('[VoiceManager] Error executing command via AgentRuntime:', err);
+      });
     } catch (err: any) {
       console.error('[VoiceManager] Transcription error:', err);
       this.resetVoiceSession();

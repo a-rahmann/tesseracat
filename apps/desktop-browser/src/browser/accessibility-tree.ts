@@ -36,10 +36,12 @@ export const INJECTED_DOM_SNAPSHOT_SCRIPT = `
     } else if (tag === 'button') {
       role = 'button';
     } else if (tag === 'a') {
-      role = 'link';
+      const isVideoLink = el.href && (el.href.includes('/watch') || el.href.includes('/video') || el.href.includes('youtu.be'));
+      const hasThumb = Boolean(el.querySelector('img, ytd-thumbnail'));
+      role = (isVideoLink || hasThumb) ? 'video' : 'link';
     } else if (tag === 'input' || tag === 'textarea') {
       role = 'textbox';
-    } else if (tag === 'video') {
+    } else if (tag === 'video' || el.querySelector('video')) {
       role = 'video';
     } else if (tag.startsWith('h') && tag.length === 2) {
       role = 'heading';

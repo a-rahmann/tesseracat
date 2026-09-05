@@ -26,9 +26,12 @@ export * from '../adapters/instagram.js';
 export * from '../adapters/gmail.js';
 export * from '../adapters/amazon.js';
 export * from '../adapters/generic.js';
+export * from '../agent/command-router.js';
+export * from '../browser/media-controller.js';
 export * from '../agent/cancellation.js';
 export * from '../agent/fast-path.js';
 export * from '../agent/tool-registry.js';
 export * from '../agent/action-loop.js';
 export * from '../agent/agent-runtime.js';
 export * from '../agent/planner.js';
+

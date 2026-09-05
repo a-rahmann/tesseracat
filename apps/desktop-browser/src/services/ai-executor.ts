@@ -11,6 +11,7 @@ import { BrowserAutomator } from './browser-automator.js';
 import { StructuredIntent } from './intent-engine.js';
 import { VoiceManager } from './voice-manager.js';
 import { TabSessionManager } from './tab-session-manager.js';
+import { AgentRuntime } from '../agent/agent-runtime.js';
 
 export type AIExecutionStatus = 'idle' | 'thinking' | 'executing' | 'waiting' | 'success' | 'error';
 
@@ -52,6 +53,22 @@ export class AIExecutionCoordinator {
 
   private constructor() {
     this.automator = BrowserAutomator.getInstance();
+
+    AgentRuntime.getInstance().subscribe((agentState) => {
+      this.updateState({
+        status: agentState.status as any,
+        goal: agentState.goal,
+        currentAction: agentState.currentAction,
+        progress: agentState.progress,
+        steps: (agentState.steps || []).map((s, idx) => ({
+          id: `step-${idx + 1}`,
+          stepNumber: s.stepNumber,
+          description: s.description,
+          status: (s.status as any) || 'PENDING',
+        })),
+        error: agentState.error,
+      });
+    });
   }
 
   public static getInstance(): AIExecutionCoordinator {
@@ -137,6 +154,27 @@ export class AIExecutionCoordinator {
   public async executeIntent(intent: StructuredIntent): Promise<void> {
     if (!intent) return;
 
+    // Clarification-only intents (e.g. standalone "Hey Tesseract")
+    if (intent.type === 'clarification') {
+      if (intent.spokenIntro) {
+        await this.speak(intent.spokenIntro);
+      }
+      VoiceManager.getInstance().resetVoiceSession();
+      return;
+    }
+
+    // Authoritative pipeline: forward directly to AgentRuntime
+    const rawText = intent.cleanText || intent.rawText;
+    if (rawText) {
+      try {
+        console.log(`[AI Coordinator] Forwarding intent to AgentRuntime: "${rawText}"`);
+        await AgentRuntime.getInstance().handleUserCommand(rawText);
+        return;
+      } catch (err) {
+        console.error('[AI Coordinator] AgentRuntime error during executeIntent:', err);
+      }
+    }
+
     const taskId = `task-${Date.now()}`;
     console.log(`[AI] task created (ID: ${taskId}, Type: ${intent.type}, Raw: "${intent.rawText}")`);
 
@@ -146,15 +184,6 @@ export class AIExecutionCoordinator {
     if (this.collapseTimer) {
       clearTimeout(this.collapseTimer);
       this.collapseTimer = null;
-    }
-
-    // Clarification-only intents (e.g. standalone "Hey Tesseract")
-    if (intent.type === 'clarification') {
-      if (intent.spokenIntro) {
-        await this.speak(intent.spokenIntro);
-      }
-      VoiceManager.getInstance().resetVoiceSession();
-      return;
     }
 
     const steps: AIStep[] = [

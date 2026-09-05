@@ -1,6 +1,7 @@
 /**
  * AgentRuntime: Authoritative Autonomous Execution Engine for Tesseract.
- * Integrates Voice, FastPathClassifier, Local Gemma 3 4B, ActionLoop, Conversational Memory, and Adapters.
+ * Invariant: ACTION != SEARCH. Never default to Google search.
+ * Target-aware execution: WHAT, WHERE, ACTION with verified live browser state.
  */
 export interface AgentTaskState {
     status: 'idle' | 'thinking' | 'executing' | 'speaking' | 'success' | 'error';
@@ -31,9 +32,19 @@ export declare class AgentRuntime {
     cancelActiveTask(): void;
     speak(text: string): Promise<void>;
     /**
-     * Main command dispatch pipeline.
+     * Main command dispatch pipeline with explicit ACTION != SEARCH routing.
      */
     handleUserCommand(rawCommand: string): Promise<void>;
-    private executeFastPathAction;
+    /**
+     * Verified Multi-step PLAY Action:
+     * "Play Loser on YouTube" -> Open YouTube -> Search "Loser" -> Click Result -> Verify Playback
+     */
+    private executePlayAction;
+    /**
+     * Verified Contextual CLICK Action:
+     * "Click the video on my screen", "Click the blue button", "Click Rahul"
+     */
+    private executeClickAction;
+    private executeFastPath;
 }
 //# sourceMappingURL=agent-runtime.d.ts.map

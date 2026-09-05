@@ -2,7 +2,7 @@
  * BrowserPerception: Unified sensory perception layer for Tesseract.
  * Provides structured DOM accessibility snapshots, video understanding, and page change detection.
  */
-import { PageSnapshot } from './snapshot.js';
+import { PageSnapshot, SnapshotElement } from './snapshot.js';
 import { VideoStateObservation } from './media.js';
 export declare class BrowserPerception {
     private static instance;
@@ -33,6 +33,7 @@ export declare class BrowserPerception {
      * Waits for URL or DOM hash to change.
      */
     waitForPageChange(timeoutMs?: number): Promise<boolean>;
+    findMatchingElement(query?: string, targetType?: string, ordinalIndex?: number): Promise<SnapshotElement | null>;
     private computeHash;
 }
 //# sourceMappingURL=browser-perception.d.ts.map

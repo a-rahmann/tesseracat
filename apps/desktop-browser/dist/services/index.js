@@ -43,6 +43,8 @@ __exportStar(require("../adapters/instagram.js"), exports);
 __exportStar(require("../adapters/gmail.js"), exports);
 __exportStar(require("../adapters/amazon.js"), exports);
 __exportStar(require("../adapters/generic.js"), exports);
+__exportStar(require("../agent/command-router.js"), exports);
+__exportStar(require("../browser/media-controller.js"), exports);
 __exportStar(require("../agent/cancellation.js"), exports);
 __exportStar(require("../agent/fast-path.js"), exports);
 __exportStar(require("../agent/tool-registry.js"), exports);
