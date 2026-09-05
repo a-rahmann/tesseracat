@@ -7,22 +7,9 @@ import { ipcRenderer } from 'electron';
   getDownloadHistory: () => ipcRenderer.invoke('get-download-history'),
   openFilePath: (filePath: string) => ipcRenderer.invoke('open-file-path', filePath),
   downloadUrlResource: (url: string) => ipcRenderer.invoke('download-url-resource', url),
+  whisperTranscribe: (audioData: Float32Array | number[] | ArrayBuffer) => ipcRenderer.invoke('whisper:transcribe', audioData),
+  openDevTools: () => ipcRenderer.invoke('open-devtools'),
   onDownload: (callback: (data: any) => void) => {
     ipcRenderer.on('download-event', (_evt, data) => callback(data));
-  },
-  onWebviewTEvent: (callback: (data: any) => void) => {
-    ipcRenderer.on('webview-t-event', (_evt, data) => callback(data));
-  },
-  startVoiceListening: () => ipcRenderer.invoke('start-voice-listening'),
-  stopVoiceListening: () => ipcRenderer.invoke('stop-voice-listening'),
-  onVoiceHypothesis: (callback: (text: string) => void) => {
-    ipcRenderer.on('voice-hypothesis', (_evt, text) => callback(text));
-  },
-  onVoiceRecognized: (callback: (text: string) => void) => {
-    ipcRenderer.on('voice-recognized', (_evt, text) => callback(text));
-  },
-  transcribeAudio: (audioData: number[]) => ipcRenderer.invoke('transcribe-audio', audioData),
-  refocusMainWindow: () => ipcRenderer.invoke('refocus-main-window'),
-  setApiKey: (key: string) => ipcRenderer.invoke('set-api-key', key),
-  setLlmConfig: (config: any) => ipcRenderer.invoke('set-llm-config', config)
+  }
 };
