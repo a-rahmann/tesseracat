@@ -8,13 +8,24 @@ exports.PCM_WORKLET_CODE = void 0;
 exports.loadPcmWorklet = loadPcmWorklet;
 exports.PCM_WORKLET_CODE = `
 class PcmCaptureProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = new Float32Array(512);
+    this.bufferIndex = 0;
+  }
+
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     if (input && input.length > 0) {
       const channelData = input[0];
       if (channelData && channelData.length > 0) {
-        // Send a dedicated copy of Float32Array to the main thread
-        this.port.postMessage(channelData.slice());
+        for (let i = 0; i < channelData.length; i++) {
+          this.buffer[this.bufferIndex++] = channelData[i];
+          if (this.bufferIndex >= 512) {
+            this.port.postMessage(this.buffer.slice());
+            this.bufferIndex = 0;
+          }
+        }
       }
     }
     const output = outputs[0];

@@ -56,15 +56,15 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   const rms = Math.sqrt(sumSq / sampleCount);
   console.log(`[Whisper] Received ${sampleCount} samples (~${durationSec.toFixed(2)}s) | Min: ${min.toFixed(4)}, Max: ${max.toFixed(4)}, RMS: ${rms.toFixed(5)}${nonFiniteCount > 0 ? ` (Fixed ${nonFiniteCount} non-finite samples)` : ''}`);
 
-  // Reject audio that is too short (< 0.25s / 4000 samples at 16kHz)
-  if (sampleCount < 4000) {
-    console.log('[Whisper] Rejected: audio too short (< 0.25s)');
+  // Reject audio that is too short (< 0.6s / 9600 samples at 16kHz)
+  if (sampleCount < 9600) {
+    console.log('[Whisper] Rejected: audio too short (< 0.6s / 9600 samples)');
     return '';
   }
 
-  // Reject pure silence or faint background murmur (RMS < 0.006)
-  if (rms < 0.006) {
-    console.log('[Whisper] Rejected: audio is ambient background noise (RMS < 0.006)');
+  // Reject pure silence or faint background murmur (RMS < 0.008)
+  if (rms < 0.008) {
+    console.log('[Whisper] Rejected: audio is ambient background noise (RMS < 0.008)');
     return '';
   }
 

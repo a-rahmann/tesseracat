@@ -23,11 +23,13 @@ export declare class VoiceActivityDetector {
     private frameSize;
     private onSpeechStartCallback;
     private onSpeechEndCallback;
+    private totalSpeechFrames;
     constructor(config?: VADConfig);
     reset(): void;
     onSpeechStart(cb: () => void): void;
     onSpeechEnd(cb: (speechLengthMs: number) => void): void;
     getBaselineNoise(): number;
+    getTotalSpeechMs(): number;
     processChunk(samples: Float32Array): VADEvent;
 }
 //# sourceMappingURL=vad.d.ts.map

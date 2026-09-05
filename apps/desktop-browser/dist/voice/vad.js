@@ -14,20 +14,22 @@ class VoiceActivityDetector {
     frameSize = 512; // ~32ms per frame at 16kHz
     onSpeechStartCallback = null;
     onSpeechEndCallback = null;
+    totalSpeechFrames = 0;
     constructor(config = {}) {
         this.sampleRate = config.sampleRate ?? 16000;
-        const trailingMs = Math.max(300, Math.min(700, config.trailingSilenceMs ?? 450));
-        const minSpeechMs = config.minSpeechDurationMs ?? 150;
+        const trailingMs = Math.max(400, Math.min(2000, config.trailingSilenceMs ?? 950));
+        const minSpeechMs = config.minSpeechDurationMs ?? 220;
         const msPerFrame = (this.frameSize / this.sampleRate) * 1000;
         this.trailingSilenceFrames = Math.round(trailingMs / msPerFrame);
-        this.minSpeechFrames = Math.round(minSpeechMs / msPerFrame);
+        this.minSpeechFrames = Math.max(4, Math.round(minSpeechMs / msPerFrame));
         this.noiseFloorAdaptRate = config.noiseFloorAdaptRate ?? 0.008;
-        this.speechMultiplier = config.speechEnergyMultiplier ?? 2.1;
+        this.speechMultiplier = config.speechEnergyMultiplier ?? 2.0;
     }
     reset() {
         this.isSpeaking = false;
         this.consecutiveSpeechFrames = 0;
         this.consecutiveSilenceFrames = 0;
+        this.totalSpeechFrames = 0;
     }
     onSpeechStart(cb) {
         this.onSpeechStartCallback = cb;
@@ -37,6 +39,9 @@ class VoiceActivityDetector {
     }
     getBaselineNoise() {
         return this.baselineRms;
+    }
+    getTotalSpeechMs() {
+        return (this.totalSpeechFrames * this.frameSize / this.sampleRate) * 1000;
     }
     processChunk(samples) {
         let sumSq = 0;
@@ -49,7 +54,6 @@ class VoiceActivityDetector {
             }
         }
         const rms = Math.sqrt(sumSq / samples.length);
-        const zcr = zeroCrossings / samples.length;
         const speechThreshold = Math.max(0.012, this.baselineRms * this.speechMultiplier);
         if (!this.isSpeaking) {
             // Adapt baseline smoothly during silence
@@ -58,6 +62,7 @@ class VoiceActivityDetector {
                 this.consecutiveSpeechFrames++;
                 if (this.consecutiveSpeechFrames >= this.minSpeechFrames) {
                     this.isSpeaking = true;
+                    this.totalSpeechFrames += this.consecutiveSpeechFrames;
                     this.consecutiveSpeechFrames = 0;
                     this.consecutiveSilenceFrames = 0;
                     if (this.onSpeechStartCallback)
@@ -71,21 +76,23 @@ class VoiceActivityDetector {
             return 'speaking';
         }
         else {
-            // Currently speaking - check for trailing silence window
-            if (rms < speechThreshold) {
+            // Currently speaking
+            if (rms >= speechThreshold) {
+                this.totalSpeechFrames++;
+                this.consecutiveSilenceFrames = Math.max(0, this.consecutiveSilenceFrames - 2);
+            }
+            else {
                 this.consecutiveSilenceFrames++;
                 if (this.consecutiveSilenceFrames >= this.trailingSilenceFrames) {
+                    const totalMs = (this.totalSpeechFrames * this.frameSize / this.sampleRate) * 1000;
                     this.isSpeaking = false;
                     this.consecutiveSpeechFrames = 0;
                     this.consecutiveSilenceFrames = 0;
-                    const msDuration = (this.frameSize / this.sampleRate) * 1000;
+                    this.totalSpeechFrames = 0;
                     if (this.onSpeechEndCallback)
-                        this.onSpeechEndCallback(msDuration);
+                        this.onSpeechEndCallback(totalMs);
                     return 'speech_end';
                 }
-            }
-            else {
-                this.consecutiveSilenceFrames = Math.max(0, this.consecutiveSilenceFrames - 2);
             }
             return 'speaking';
         }
