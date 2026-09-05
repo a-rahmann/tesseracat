@@ -41,6 +41,11 @@ export declare class IntentEngine {
     /**
      * Strip wake-up phrases and polite conversational fillers.
      */
+    /**
+     * Strip wake-up phrases and polite conversational fillers.
+     * Matches "Hey Tesseract", "Hate us Iraq", "Hey test rats", "Hey test react",
+     * and all regional phonetic accent variations through dual regex & phonetic skeleton matching.
+     */
     stripWakeAndPreamble(text: string): {
         hasWakeWord: boolean;
         cleanText: string;

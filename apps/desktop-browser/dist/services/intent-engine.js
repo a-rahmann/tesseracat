@@ -57,13 +57,44 @@ class IntentEngine {
     /**
      * Strip wake-up phrases and polite conversational fillers.
      */
+    /**
+     * Strip wake-up phrases and polite conversational fillers.
+     * Matches "Hey Tesseract", "Hate us Iraq", "Hey test rats", "Hey test react",
+     * and all regional phonetic accent variations through dual regex & phonetic skeleton matching.
+     */
     stripWakeAndPreamble(text) {
+        if (!text)
+            return { hasWakeWord: false, cleanText: '' };
         let raw = text.trim();
-        const original = raw;
-        // Wake word variations
-        const wakeRegex = /^(?:hey\s+|hi\s+|ok\s+|hello\s+|yo\s+)?(?:tesseract|tesserract|tesserac|tessera|tesser\s*act|tess\s*react|test\s*react|tester\s*act|deseract|dezeract|tashira|tashera|tasheract|tazera|tess)(?:[,.!\s]+|$)/i;
-        const hasWakeWord = wakeRegex.test(raw);
-        raw = raw.replace(wakeRegex, '').trim();
+        // 1. Direct Regex matching all common Whisper acoustic/accent variations
+        const directWakeRegex = /^(?:hey|hi|hello|ok|yo|hate|head|he|a)?[\s,.-]*(?:tesseract|tesserract|tesserac|tessera|tasseract|tasheract|tazera|test\s*rats?|test\s*react|test\s*tracks?|test\s*racks?|tester\s*act|tess\s*react|tess\s*act|taste\s*rats?|taste\s*act|toss\s*a\s*rock|us\s*iraq|this\s*iraq|the\s*seract|deseract|desert\s*act|death\s*trap|that\s*a\s*rap|tess)(?:[,.!\s]+|$)/i;
+        let hasWakeWord = false;
+        const m = raw.match(directWakeRegex);
+        if (m) {
+            hasWakeWord = true;
+            raw = raw.slice(m[0].length).trim();
+        }
+        else {
+            // 2. Accent-tolerant phonetic skeleton matching
+            const words = raw.split(/[\s,.-]+/).filter(Boolean);
+            for (let len = 1; len <= Math.min(4, words.length); len++) {
+                const candidate = words.slice(0, len).join(' ');
+                const skeleton = candidate
+                    .toLowerCase()
+                    .replace(/ph/g, 'f')
+                    .replace(/ck|c(?=[iey])/g, 's')
+                    .replace(/[cqk]/g, 'k')
+                    .replace(/[dt]/g, 't')
+                    .replace(/[sz]/g, 's')
+                    .replace(/[aeiouywh]/g, '')
+                    .replace(/(.)\1+/g, '$1');
+                if (/t.*s.*r.*[kts]/i.test(skeleton)) {
+                    hasWakeWord = true;
+                    raw = words.slice(len).join(' ').trim();
+                    break;
+                }
+            }
+        }
         // Polite fillers & conversational preambles
         const preamblePatterns = [
             /^(?:can\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i,

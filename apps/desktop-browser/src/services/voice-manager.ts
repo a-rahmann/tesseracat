@@ -78,10 +78,9 @@ export class VoiceManager {
           const durSec = (speechBuffer.length / 16000).toFixed(2);
           console.log(`[Wake Verify] Candidate utterance (${durSec}s) | Whisper heard: "${raw}"`);
 
-          // Strictly verify if "Tesseract" or wake phrase is actually in the spoken words
-          const wakePattern = /(?:\b(?:hey|hi|ok|hello|yo)\s+(?:tesseract|tesseract|tesserac|tessera|tesser\s*act|tess\s*react|test\s*react|tester\s*act|deseract|dezeract|tasheract|tazera|tess)\b|\b(?:tesseract|tesseract|tesserac|tessera|tesser\s*act|tess\s*react|test\s*react|tester\s*act|deseract|dezeract|tasheract)\b)/i;
-          if (wakePattern.test(raw)) {
-            console.log(`[Wake Verify] ✅ CONFIRMED WAKE WORD: "${raw}"`);
+          const { hasWakeWord, cleanText } = IntentEngine.getInstance().stripWakeAndPreamble(raw);
+          if (hasWakeWord) {
+            console.log(`[Wake Verify] ✅ CONFIRMED WAKE WORD: "${raw}"${cleanText ? ` (Command: "${cleanText}")` : ''}`);
             this.handleWakeDetected(score, raw);
           } else {
             console.log(`[Wake Verify] ❌ REJECTED non-wake speech: "${raw}"`);
