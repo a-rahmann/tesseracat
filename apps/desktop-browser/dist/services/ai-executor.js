@@ -157,6 +157,14 @@ class AIExecutionCoordinator {
                         const res = await this.automator.resumeMedia();
                         success = res.success;
                     }
+                    else if (intent.action === 'scroll_down') {
+                        const res = await this.automator.scrollDown();
+                        success = res.success;
+                    }
+                    else if (intent.action === 'scroll_up') {
+                        const res = await this.automator.scrollUp();
+                        success = res.success;
+                    }
                     break;
                 }
                 case 'navigation':

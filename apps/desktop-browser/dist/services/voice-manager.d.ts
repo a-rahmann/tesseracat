@@ -34,6 +34,7 @@ export declare class VoiceManager {
     private baselineRms;
     private recordingTrigger;
     private isVerifyingWake;
+    private commandSpeechFrames;
     private stateListeners;
     private transcriptionListeners;
     private constructor();

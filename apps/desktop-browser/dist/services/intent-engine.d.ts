@@ -12,7 +12,7 @@ export interface StructuredIntent {
     cleanText: string;
     targetUrl?: string;
     query?: string;
-    action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
+    action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'scroll_down' | 'scroll_up' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
     referent?: 'first' | 'second' | 'third' | 'last' | number;
     spokenIntro?: string;
     spokenFeedback?: string;

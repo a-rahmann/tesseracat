@@ -32,6 +32,7 @@ class VoiceManager {
     baselineRms = 0.01;
     recordingTrigger = 'wake';
     isVerifyingWake = false;
+    commandSpeechFrames = 0;
     stateListeners = new Set();
     transcriptionListeners = new Set();
     constructor() {
@@ -158,27 +159,30 @@ class VoiceManager {
                     if (this.state.status === 'listening-for-wake' || this.state.status === 'idle') {
                         this.baselineRms = this.baselineRms * 0.95 + rms * 0.05;
                     }
-                    if (this.state.status === 'recording' || this.state.status === 'wake-detected') {
+                    if (this.state.status === 'recording') {
                         // Speech threshold requires distinct vocal energy above ambient noise
                         const speechThreshold = Math.max(0.014, this.baselineRms * 1.8);
                         const silenceFloor = Math.max(0.007, this.baselineRms * 1.25);
                         if (rms > speechThreshold) {
-                            this.hasSpoken = true;
-                            if (this.initialSilenceTimer) {
-                                clearTimeout(this.initialSilenceTimer);
-                                this.initialSilenceTimer = null;
-                            }
-                            if (this.silenceTimer) {
-                                clearTimeout(this.silenceTimer);
-                                this.silenceTimer = null;
+                            this.commandSpeechFrames++;
+                            if (this.commandSpeechFrames >= 4) {
+                                this.hasSpoken = true;
+                                if (this.initialSilenceTimer) {
+                                    clearTimeout(this.initialSilenceTimer);
+                                    this.initialSilenceTimer = null;
+                                }
+                                if (this.silenceTimer) {
+                                    clearTimeout(this.silenceTimer);
+                                    this.silenceTimer = null;
+                                }
                             }
                         }
                         else if (this.hasSpoken && rms < silenceFloor) {
                             if (!this.silenceTimer) {
-                                // Swift trailing silence detection: 550ms for wake commands, 800ms for PTT
-                                const timeoutMs = this.recordingTrigger === 'wake' ? 550 : 800;
+                                // Generous trailing silence (950ms) gives conversational breathing room
+                                const timeoutMs = this.recordingTrigger === 'wake' ? 950 : 1200;
                                 this.silenceTimer = setTimeout(() => {
-                                    if ((this.state.status === 'recording' || this.state.status === 'wake-detected') && this.hasSpoken) {
+                                    if (this.state.status === 'recording' && this.hasSpoken) {
                                         console.log(`[Voice] recording stopped (Reason: trailing_silence, Trigger: ${this.recordingTrigger})`);
                                         this.stopRecordingAndTranscribe();
                                     }
@@ -368,22 +372,25 @@ class VoiceManager {
         this.clearTimers();
         this.capturedChunks = [];
         this.hasSpoken = false;
+        this.commandSpeechFrames = 0;
         this.setState('wake-detected', `Score: ${score.toFixed(2)}`);
         // Immediate 180ms transition for chime & visual recognition while buffering command speech
         setTimeout(() => {
             if (this.state.status === 'wake-detected') {
                 console.log('[Voice] recording started (Trigger: wake)');
+                this.hasSpoken = false;
+                this.commandSpeechFrames = 0;
                 this.setState('recording', 'Recording command');
-                // Initial silence timer: if user doesn't speak within 3.5s after wake, reset
+                // Initial silence timer: if user doesn't speak within 4.5s after wake, reset
                 this.initialSilenceTimer = setTimeout(() => {
-                    if ((this.state.status === 'recording' || this.state.status === 'wake-detected') && !this.hasSpoken) {
+                    if (this.state.status === 'recording' && !this.hasSpoken) {
                         console.log('[Voice] recording stopped (Reason: initial_silence)');
                         this.resetVoiceSession();
                     }
-                }, 3500);
+                }, 4500);
                 // Hard max safety timeout of 8.0s
                 this.maxDurationTimer = setTimeout(() => {
-                    if (this.state.status === 'recording' || this.state.status === 'wake-detected') {
+                    if (this.state.status === 'recording') {
                         console.log('[Voice] recording stopped (Reason: max_duration)');
                         this.stopRecordingAndTranscribe();
                     }

@@ -27,6 +27,8 @@ export declare class BrowserAutomator {
     playOrdinalMedia(index?: number): Promise<AutomatorResult<string>>;
     createTab(url?: string): Promise<AutomatorResult>;
     closeCurrentTab(): Promise<AutomatorResult>;
+    scrollDown(pixels?: number): Promise<AutomatorResult>;
+    scrollUp(pixels?: number): Promise<AutomatorResult>;
     pauseMedia(): Promise<AutomatorResult>;
     resumeMedia(): Promise<AutomatorResult>;
     extractDirectMessage(contactName?: string): Promise<string>;

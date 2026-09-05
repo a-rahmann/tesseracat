@@ -26,7 +26,7 @@ export interface StructuredIntent {
   cleanText: string;
   targetUrl?: string;
   query?: string;
-  action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
+  action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'scroll_down' | 'scroll_up' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
   referent?: 'first' | 'second' | 'third' | 'last' | number;
   spokenIntro?: string;
   spokenFeedback?: string;
@@ -333,7 +333,7 @@ export class IntentEngine {
         spokenIntro: 'Closing tab.',
       };
     }
-    if (/\b(?:pause|pause\s+video|pause\s+music|pause\s+song|stop\s+music|stop\s+playback)\b/i.test(text)) {
+    if (/\b(?:pause|pause\s+video|pause\s+music|pause\s+song|pause\s+it|pause\s+this|stop\s+music|stop\s+playback)\b/i.test(text) || /^(?:pause|stop)\s+(?:it|this|the\s+video|the\s+music)$/i.test(text) || text === 'pause') {
       return {
         type: 'browser_control',
         action: 'pause',
@@ -343,7 +343,7 @@ export class IntentEngine {
         spokenIntro: 'Pausing playback.',
       };
     }
-    if (/\b(?:resume|resume\s+video|resume\s+music|continue\s+playback|unpause)\b/i.test(text)) {
+    if (/\b(?:resume|resume\s+video|resume\s+music|continue\s+playback|unpause|play\s+it|play\s+this|play\s+the\s+video|start\s+playing|can\s+you\s+play\s+it)\b/i.test(text) || /^(?:play|resume|unpause)\s+(?:it|this|the\s+video|the\s+music)$/i.test(text) || text === 'play') {
       return {
         type: 'browser_control',
         action: 'resume',
@@ -351,6 +351,26 @@ export class IntentEngine {
         rawText,
         cleanText,
         spokenIntro: 'Resuming playback.',
+      };
+    }
+    if (/\b(?:scroll\s+down|go\s+down|page\s+down|scroll\s+lower|scroll\s+bottom)\b/i.test(text) || text === 'down') {
+      return {
+        type: 'browser_control',
+        action: 'scroll_down',
+        confidence: 0.96,
+        rawText,
+        cleanText,
+        spokenIntro: 'Scrolling down.',
+      };
+    }
+    if (/\b(?:scroll\s+up|go\s+up|page\s+up|scroll\s+higher|scroll\s+top)\b/i.test(text) || text === 'up') {
+      return {
+        type: 'browser_control',
+        action: 'scroll_up',
+        confidence: 0.96,
+        rawText,
+        cleanText,
+        spokenIntro: 'Scrolling up.',
       };
     }
     if (/\b(?:go\s+back|navigate\s+back|previous\s+page|back)\b/i.test(text)) {
@@ -465,6 +485,19 @@ export class IntentEngine {
         .replace(/\b(?:from|on)\s+(?:youtube|yotube|you\s*tube|spotify)\b/gi, '')
         .replace(/\b(?:video|song|music)\b/gi, '')
         .trim();
+
+      // If query is just a pronoun like "it" or "this", this is a resume command, not a search
+      if (/^(?:it|this|that|again|now)$/i.test(query)) {
+        return {
+          type: 'browser_control',
+          action: 'resume',
+          confidence: 0.96,
+          rawText,
+          cleanText,
+          spokenIntro: 'Resuming playback.',
+        };
+      }
+
       if (!query || query === 'a' || query === 'the') {
         query = 'popular music songs';
       }

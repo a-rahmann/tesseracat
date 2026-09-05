@@ -234,10 +234,30 @@ class BrowserAutomator {
             return { success: false, error: err.message };
         }
     }
+    async scrollDown(pixels = 500) {
+        console.log(`[Browser] scrollDown started (${pixels}px)`);
+        const script = `window.scrollBy({ top: ${pixels}, behavior: 'smooth' });`;
+        await this.executeWhenReady(script);
+        return { success: true };
+    }
+    async scrollUp(pixels = 500) {
+        console.log(`[Browser] scrollUp started (${pixels}px)`);
+        const script = `window.scrollBy({ top: -${pixels}, behavior: 'smooth' });`;
+        await this.executeWhenReady(script);
+        return { success: true };
+    }
     async pauseMedia() {
         console.log('[Browser] pauseMedia started');
         const script = `
       (() => {
+        // 1. YouTube player pause button
+        const ytBtn = document.querySelector('.ytp-play-button');
+        if (ytBtn && (ytBtn.getAttribute('data-title-no-tooltip')?.toLowerCase().includes('pause') || ytBtn.getAttribute('aria-label')?.toLowerCase().includes('pause'))) {
+          ytBtn.click();
+          return 'Triggered YouTube pause button';
+        }
+
+        // 2. HTML5 video elements
         const videos = Array.from(document.querySelectorAll('video'));
         let count = 0;
         videos.forEach(v => {
@@ -246,7 +266,12 @@ class BrowserAutomator {
             count++;
           }
         });
-        return count > 0 ? 'Paused ' + count + ' video(s)' : 'No active playing video found';
+        if (count > 0) return 'Paused ' + count + ' video(s)';
+
+        // 3. Fallback keyboard event
+        const event = new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', keyCode: 75, which: 75, bubbles: true });
+        document.body.dispatchEvent(event);
+        return 'Dispatched playback toggle event';
       })()
     `;
         const result = await this.executeWhenReady(script);
@@ -256,6 +281,14 @@ class BrowserAutomator {
         console.log('[Browser] resumeMedia started');
         const script = `
       (() => {
+        // 1. YouTube player play button
+        const ytBtn = document.querySelector('.ytp-play-button');
+        if (ytBtn && (ytBtn.getAttribute('data-title-no-tooltip')?.toLowerCase().includes('play') || ytBtn.getAttribute('aria-label')?.toLowerCase().includes('play'))) {
+          ytBtn.click();
+          return 'Triggered YouTube play button';
+        }
+
+        // 2. HTML5 video elements
         const videos = Array.from(document.querySelectorAll('video'));
         let count = 0;
         videos.forEach(v => {
@@ -264,7 +297,12 @@ class BrowserAutomator {
             count++;
           }
         });
-        return count > 0 ? 'Resumed ' + count + ' video(s)' : 'No paused video found';
+        if (count > 0) return 'Resumed ' + count + ' video(s)';
+
+        // 3. Fallback keyboard event
+        const event = new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', keyCode: 75, which: 75, bubbles: true });
+        document.body.dispatchEvent(event);
+        return 'Dispatched playback toggle event';
       })()
     `;
         const result = await this.executeWhenReady(script);
