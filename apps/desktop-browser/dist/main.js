@@ -163,27 +163,20 @@ electron_1.app.on('before-quit', () => {
     ollama_sidecar_js_1.OllamaSidecar.getInstance().stop();
 });
 // IPC Handlers
-electron_1.ipcMain.handle('execute-agent-task', async (_event, { profileId = 'abdul-default', goal = '', contextData = {} }) => {
+electron_1.ipcMain.handle('execute-agent-task', async (_event, { profileId = 'user-default', goal = '', contextData = {} }) => {
     try {
-        const task = orchestrator.createTask(profileId, goal);
-        const lower = goal.toLowerCase();
-        // Build context-aware steps
-        const steps = [
-            { id: `step-1-${Date.now()}`, stepNumber: 1, description: `Analyze context for: "${goal}"`, toolName: 'user_context_analyze', toolParameters: { context: goal }, status: 'SUCCESS' },
-            { id: `step-2-${Date.now()}`, stepNumber: 2, description: `Navigate to target service`, toolName: 'browser_navigate', toolParameters: { url: contextData.targetUrl || 'https://google.com' }, status: 'SUCCESS' },
-            { id: `step-3-${Date.now()}`, stepNumber: 3, description: `Execute autonomous browser action`, toolName: 'dom_interact', toolParameters: { action: 'execute' }, status: 'SUCCESS' },
-            { id: `step-4-${Date.now()}`, stepNumber: 4, description: `Verify policy & security`, toolName: 'privacy_scan', status: 'SUCCESS' }
-        ];
-        orchestrator.setPlanSteps(profileId, task.id, steps);
-        const context = { profileId, isAutonomousMission: true, dailyCloudSpendCapUSD: 10, currentCloudSpendUSD: 0.05 };
+        console.log(`[IPC] execute-agent-task for goal: "${goal}" using Local Gemma 3`);
+        const task = await orchestrator.createTaskAndPlan(profileId, goal);
+        const context = { profileId, isAutonomousMission: true, dailyCloudSpendCapUSD: 10, currentCloudSpendUSD: 0.0 };
         const results = [];
-        for (let i = 0; i < steps.length; i++) {
-            const res = await orchestrator.executeStep(task.id, steps[i].id, context);
+        for (const step of task.planSteps) {
+            const res = await orchestrator.executeStep(task.id, step.id, context);
             results.push(res);
         }
         return { success: true, task: orchestrator.getTask(profileId, task.id), stepResults: results };
     }
     catch (err) {
+        console.error('[IPC] execute-agent-task error:', err);
         return { success: false, error: err.message };
     }
 });
