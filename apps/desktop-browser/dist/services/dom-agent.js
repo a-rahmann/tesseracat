@@ -143,6 +143,14 @@ class DOMAgent {
             passInput.addEventListener('input', onTyping);
             passInput.addEventListener('keydown', onTyping);
           }
+
+          // 4. Detect address / checkout fields to prompt autofill
+          setTimeout(() => {
+            const addressInputs = Array.from(document.querySelectorAll('input[autocomplete*="address"], input[name*="address"], input[id*="address"], input[placeholder*="address"], input[autocomplete*="street"], input[name*="city"], input[autocomplete*="postal-code"]'));
+            if (addressInputs.length >= 2) {
+              console.log('[Tesseract DOM] ADDRESS_FORM_DETECTED');
+            }
+          }, 800);
         }
 
         if (document.readyState === 'loading') {

@@ -13,6 +13,9 @@ export declare class AudioCapture {
     start(callbacks: AudioCaptureCallbacks): Promise<{
         sampleRate: number;
     }>;
+    private watchdogInterval;
+    private startHealthWatchdog;
+    resumeIfSuspended(): Promise<void>;
     stop(): Promise<void>;
     isActive(): boolean;
 }

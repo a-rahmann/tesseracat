@@ -86,6 +86,7 @@ export class AudioCapture {
       };
 
       this.isCapturing = true;
+      this.startHealthWatchdog();
       return { sampleRate: nativeSampleRate };
     } catch (err: any) {
       console.error('[Voice] AudioCapture start failed:', err);
@@ -95,8 +96,33 @@ export class AudioCapture {
     }
   }
 
+  private watchdogInterval: any = null;
+
+  private startHealthWatchdog(): void {
+    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
+    this.watchdogInterval = setInterval(() => {
+      if (this.isCapturing && this.audioContext) {
+        if (this.audioContext.state === 'suspended') {
+          console.log('[Voice Watchdog] AudioContext was suspended, waking back up...');
+          this.audioContext.resume().catch(() => {});
+        }
+      }
+    }, 2000);
+  }
+
+  public async resumeIfSuspended(): Promise<void> {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      console.log('[Voice] Explicitly resuming suspended AudioContext...');
+      await this.audioContext.resume().catch(() => {});
+    }
+  }
+
   public async stop(): Promise<void> {
     this.isCapturing = false;
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
 
     if (this.workletNode) {
       try {

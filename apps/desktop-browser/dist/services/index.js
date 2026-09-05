@@ -19,5 +19,6 @@ __exportStar(require("./browser-automator.js"), exports);
 __exportStar(require("./ai-executor.js"), exports);
 __exportStar(require("./intent-engine.js"), exports);
 __exportStar(require("./user-memory.js"), exports);
+__exportStar(require("./tab-session-manager.js"), exports);
 __exportStar(require("./dom-agent.js"), exports);
 //# sourceMappingURL=index.js.map

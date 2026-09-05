@@ -757,74 +757,115 @@
       padding: 8px 14px;
       border-radius: var(--radius-md);
       color: var(--text);
-    /* USERNAME MEMORY PROMPT */
+    /* REDESIGNED AUTONOMOUS MEMORY & AUTOFILL PROMPTS */
     .memory-prompt {
       position: absolute;
-      top: 50px;
+      top: 52px;
       right: 24px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      background: rgba(20, 20, 26, 0.92);
-      border: 1px solid rgba(56, 189, 248, 0.35);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      padding: 10px 16px;
-      border-radius: var(--radius-lg);
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.2);
-      z-index: 110;
-      animation: prompt-slide-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      gap: 16px;
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.96) 0%, rgba(15, 23, 42, 0.94) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      padding: 12px 18px;
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 24px rgba(56, 189, 248, 0.25);
+      z-index: 120;
+      animation: prompt-slide-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+      max-width: 460px;
     }
     @keyframes prompt-slide-in {
-      from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+      from { opacity: 0; transform: translateY(-12px) scale(0.95); }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
-    .memory-prompt-icon {
-      font-size: 16px;
+    .memory-prompt-icon-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(129, 140, 248, 0.25) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      font-size: 17px;
+      flex-shrink: 0;
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
     }
     .memory-prompt-text {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
+      min-width: 180px;
     }
-    #memory-prompt-msg {
-      font-size: 12px;
+    .memory-prompt-tag {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #38bdf8;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    #memory-prompt-msg, #autofill-prompt-msg {
+      font-size: 12.5px;
       font-weight: 600;
-      color: var(--text);
+      color: #f8fafc;
+      line-height: 1.3;
     }
     .memory-prompt-sub {
-      font-size: 10px;
-      color: var(--text-muted);
+      font-size: 10.5px;
+      color: #94a3b8;
     }
     .memory-prompt-actions {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-shrink: 0;
     }
     .btn-memory-primary {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 5px 12px;
-      border-radius: var(--radius-sm);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+      color: #030712;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 7px 14px;
+      border-radius: 8px;
       cursor: pointer;
-      transition: opacity 120ms ease;
+      box-shadow: 0 4px 14px rgba(14, 165, 233, 0.35);
+      transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
     }
     .btn-memory-primary:hover {
-      opacity: 0.9;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(14, 165, 233, 0.55);
+      filter: brightness(1.08);
+    }
+    .btn-memory-primary:active {
+      transform: scale(0.96);
     }
     .btn-memory-ghost {
-      background: transparent;
-      color: var(--text-muted);
-      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.06);
+      color: #94a3b8;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       font-size: 12px;
-      padding: 4px;
+      border-radius: 8px;
       cursor: pointer;
+      transition: all 140ms ease;
     }
     .btn-memory-ghost:hover {
-      color: var(--text);
+      background: rgba(255, 255, 255, 0.14);
+      color: #f8fafc;
+      border-color: rgba(255, 255, 255, 0.2);
     }
   </style>
 </head>
@@ -985,16 +1026,37 @@
       </div>
     </div>
 
-    <!-- USERNAME MEMORY PROMPT PILL -->
+    <!-- REDESIGNED USERNAME MEMORY PROMPT CARD -->
     <div id="memory-prompt" class="memory-prompt hidden">
-      <div class="memory-prompt-icon">🔐</div>
+      <div class="memory-prompt-icon-badge">🔐</div>
       <div class="memory-prompt-text">
+        <span class="memory-prompt-tag">⚡ Autonomous Memory</span>
         <span id="memory-prompt-msg">Save username for this site?</span>
-        <span class="memory-prompt-sub">Passwords are never saved.</span>
+        <span class="memory-prompt-sub">Passwords are never saved locally.</span>
       </div>
       <div class="memory-prompt-actions">
-        <button id="btn-memory-save" class="btn-memory-primary">Remember</button>
-        <button id="btn-memory-dismiss" class="btn-memory-ghost">✕</button>
+        <button id="btn-memory-save" class="btn-memory-primary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          Remember
+        </button>
+        <button id="btn-memory-dismiss" class="btn-memory-ghost" title="Dismiss">✕</button>
+      </div>
+    </div>
+
+    <!-- REDESIGNED FORM AUTOFILL PROMPT CARD -->
+    <div id="autofill-prompt" class="memory-prompt hidden">
+      <div class="memory-prompt-icon-badge" style="background: linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(56, 189, 248, 0.2) 100%); border-color: rgba(168, 85, 247, 0.4);">📍</div>
+      <div class="memory-prompt-text">
+        <span class="memory-prompt-tag" style="color: #c084fc;">⚡ Form Autofill</span>
+        <span id="autofill-prompt-msg">Detected address fields. Autofill?</span>
+        <span class="memory-prompt-sub">Populates your secure saved address.</span>
+      </div>
+      <div class="memory-prompt-actions">
+        <button id="btn-autofill-fill" class="btn-memory-primary" style="background: linear-gradient(135deg, #a855f7 0%, #38bdf8 100%); color: #fff;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Autofill
+        </button>
+        <button id="btn-autofill-dismiss" class="btn-memory-ghost" title="Dismiss">✕</button>
       </div>
     </div>
 
@@ -1004,8 +1066,8 @@
 
   <script>
     const path = require('path');
-    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore;
-    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null;
+    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore, TabSessionManager;
+    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null, tabSessionManager = null;
 
     try {
       const services = require(path.join(__dirname, '../dist/services/index.js'));
@@ -1014,23 +1076,29 @@
       AIExecutionCoordinator = services.AIExecutionCoordinator;
       IntentEngine = services.IntentEngine;
       UserMemoryStore = services.UserMemoryStore;
+      TabSessionManager = services.TabSessionManager;
 
       if (VoiceManager) voiceManager = VoiceManager.getInstance();
       if (BrowserAutomator) automator = BrowserAutomator.getInstance();
       if (AIExecutionCoordinator) aiCoordinator = AIExecutionCoordinator.getInstance();
       if (IntentEngine) intentEngine = IntentEngine.getInstance();
       if (UserMemoryStore) userMemory = UserMemoryStore.getInstance();
+      if (TabSessionManager) tabSessionManager = TabSessionManager.getInstance();
     } catch (err) {
       console.error('[Tesseract Init] Error loading compiled services from dist/services/index.js:', err);
     }
 
     // ═══════════════════════════════════════════════════════════
-    // TAB MANAGEMENT & STATE
+    // TAB MANAGEMENT & PER-SESSION CONVERSATIONAL MEMORY
     // ═══════════════════════════════════════════════════════════
     let tabs = [
       { id: 'tab-1', title: 'Start', url: 'about:blank', isStart: true }
     ];
     let activeTabId = 'tab-1';
+    (window).activeTabId = activeTabId;
+    if (tabSessionManager) {
+      tabSessionManager.getOrCreateSession('tab-1', 'about:blank', 'Start');
+    }
 
     function renderTabs() {
       const container = document.getElementById('tabs-container');
@@ -1042,7 +1110,7 @@
         div.className = `tab-item ${tab.id === activeTabId ? 'active' : ''}`;
         div.innerHTML = `
           <span class="tab-title">${escapeHtml(tab.title)}</span>
-          ${tabs.length > 1 ? '<span class="tab-close">✕</span>' : ''}
+          ${tabs.length > 1 ? '<span class="tab-close" title="Close Tab">✕</span>' : ''}
         `;
         div.addEventListener('click', (e) => {
           if (e.target.classList.contains('tab-close')) {
@@ -1057,7 +1125,11 @@
 
     function createNewTab(url = 'about:blank') {
       const id = `tab-${Date.now()}`;
-      tabs.push({ id, title: url === 'about:blank' ? 'New Tab' : url, url, isStart: url === 'about:blank' });
+      const title = url === 'about:blank' ? 'New Tab' : url;
+      tabs.push({ id, title, url, isStart: url === 'about:blank' });
+      if (tabSessionManager) {
+        tabSessionManager.getOrCreateSession(id, url, title);
+      }
       activateTab(id);
       if (url && url !== 'about:blank') {
         navigateToUrl(url);
@@ -1068,15 +1140,21 @@
       closeTab(activeTabId);
     }
 
-    // Expose globally for BrowserAutomator and AIExecutionCoordinator
-    (window).createNewTab = createNewTab;
-    (window).closeTab = closeTab;
-    (window).closeCurrentTab = closeCurrentTab;
-    (window).activateTab = activateTab;
-
     function closeTab(id) {
       const idx = tabs.findIndex(t => t.id === id);
       if (idx === -1) return;
+      const closed = tabs[idx];
+
+      // Archive session into undo stack so conversational memory is preserved
+      if (tabSessionManager) {
+        tabSessionManager.archiveSessionForClosedTab({
+          id: closed.id,
+          title: closed.title,
+          url: closed.url,
+          index: idx
+        });
+      }
+
       tabs.splice(idx, 1);
       if (activeTabId === id) {
         const next = tabs[Math.max(0, idx - 1)];
@@ -1086,12 +1164,50 @@
       }
     }
 
+    function undoClosedTab() {
+      if (!tabSessionManager) return;
+      const restored = tabSessionManager.undoClosedTab();
+      if (!restored) {
+        showToast("No recently closed tabs to restore");
+        return;
+      }
+      const { tabSnapshot, session } = restored;
+      const restoredTab = {
+        id: tabSnapshot.id,
+        title: tabSnapshot.title || 'Restored Tab',
+        url: tabSnapshot.url || 'about:blank',
+        isStart: tabSnapshot.url === 'about:blank',
+      };
+      const insertIdx = Math.min(tabSnapshot.index, tabs.length);
+      tabs.splice(insertIdx, 0, restoredTab);
+      activateTab(restoredTab.id);
+      showToast(`⚡ Restored tab with session memory (${session.turns.length} turns)`);
+    }
+
+    // Expose globally for BrowserAutomator and AIExecutionCoordinator
+    (window).createNewTab = createNewTab;
+    (window).closeTab = closeTab;
+    (window).closeCurrentTab = closeCurrentTab;
+    (window).activateTab = activateTab;
+    (window).undoClosedTab = undoClosedTab;
+    (window).activeTabId = activeTabId;
+    (window).tabSessionManager = tabSessionManager;
+
+    // Keyboard shortcut for Cmd+Shift+T / Ctrl+Shift+T to undo closed tab
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        undoClosedTab();
+      }
+    });
+
     function activateTab(id) {
       if (!id) {
         createNewTab();
         return;
       }
       activeTabId = id;
+      (window).activeTabId = id;
       const tab = tabs.find(t => t.id === id);
       renderTabs();
 
@@ -1195,6 +1311,33 @@
       hideMemoryPrompt();
     });
 
+    function showAutofillPrompt() {
+      const promptEl = document.getElementById('autofill-prompt');
+      if (promptEl) promptEl.classList.remove('hidden');
+    }
+
+    function hideAutofillPrompt() {
+      document.getElementById('autofill-prompt')?.classList.add('hidden');
+    }
+
+    document.getElementById('btn-autofill-fill')?.addEventListener('click', async () => {
+      hideAutofillPrompt();
+      if (automator) {
+        showToast('⚡ Autofilling saved address from secure local memory...');
+        const res = await automator.autofillAddress();
+        if (res.success) {
+          showToast("Address populated successfully!");
+          if (aiCoordinator) aiCoordinator.speak("I've populated your saved address details into the form.");
+        } else {
+          showToast(res.error || "No matching address fields found");
+        }
+      }
+    });
+
+    document.getElementById('btn-autofill-dismiss')?.addEventListener('click', () => {
+      hideAutofillPrompt();
+    });
+
     if (webviewEl) {
       webviewEl.addEventListener('did-navigate', (e) => {
         const active = tabs.find(t => t.id === activeTabId);
@@ -1234,6 +1377,9 @@
           console.log('[Webview Console]', e.message);
           if (e.message.includes('Auto-submitting login')) {
             showToast('⚡ Password entered — 5s typing pause auto-submitting login!');
+          }
+          if (e.message.includes('ADDRESS_FORM_DETECTED')) {
+            showAutofillPrompt();
           }
           if (e.message.includes('USERNAME_TYPED:')) {
             try {

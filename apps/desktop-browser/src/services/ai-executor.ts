@@ -10,6 +10,7 @@
 import { BrowserAutomator } from './browser-automator.js';
 import { StructuredIntent } from './intent-engine.js';
 import { VoiceManager } from './voice-manager.js';
+import { TabSessionManager } from './tab-session-manager.js';
 
 export type AIExecutionStatus = 'idle' | 'thinking' | 'executing' | 'waiting' | 'success' | 'error';
 
@@ -131,6 +132,9 @@ export class AIExecutionCoordinator {
     const taskId = `task-${Date.now()}`;
     console.log(`[AI] task created (ID: ${taskId}, Type: ${intent.type}, Raw: "${intent.rawText}")`);
 
+    const activeTabId = typeof window !== 'undefined' && (window as any).activeTabId ? (window as any).activeTabId : 'default-tab';
+    TabSessionManager.getInstance().recordUserPrompt(activeTabId, intent.cleanText || intent.rawText, intent);
+
     if (this.collapseTimer) {
       clearTimeout(this.collapseTimer);
       this.collapseTimer = null;
@@ -189,6 +193,13 @@ export class AIExecutionCoordinator {
           } else if (intent.action === 'close_tab') {
             const res = await this.automator.closeCurrentTab();
             success = res.success;
+          } else if (intent.action === 'undo_tab') {
+            if (typeof (window as any).undoClosedTab === 'function') {
+              (window as any).undoClosedTab();
+              success = true;
+            } else {
+              success = false;
+            }
           } else if (intent.action === 'pause') {
             const res = await this.automator.pauseMedia();
             success = res.success;
@@ -365,6 +376,12 @@ export class AIExecutionCoordinator {
           progress: 1.0,
           steps,
         });
+        TabSessionManager.getInstance().recordAssistantResponse(
+          activeTabId,
+          intent.spokenIntro || intent.action || intent.type,
+          actionResult ? JSON.stringify(actionResult) : 'Success',
+          intent.targetUrl
+        );
       } else {
         console.error(`[AI] task action failed: "${intent.cleanText || intent.rawText}"`);
         this.updateState({
@@ -374,6 +391,11 @@ export class AIExecutionCoordinator {
           progress: 1.0,
           steps,
         });
+        TabSessionManager.getInstance().recordAssistantResponse(
+          activeTabId,
+          "Action could not be completed",
+          'Failed'
+        );
         await this.speak("I couldn't complete that action.");
       }
     } catch (err: any) {
@@ -389,8 +411,11 @@ export class AIExecutionCoordinator {
       await this.speak("I encountered an issue opening that page.");
     } finally {
       this.scheduleAutoCollapse();
-      // CRITICAL PIPELINE RETURN: explicitly reset voice session and resume wake listening!
+      // CRITICAL PIPELINE RETURN: explicitly reset voice session and guarantee wake listening!
       VoiceManager.getInstance().resetVoiceSession();
+      if (VoiceManager.getInstance().isWakeWordEnabled()) {
+        VoiceManager.getInstance().startWakeListening().catch(() => {});
+      }
     }
   }
 

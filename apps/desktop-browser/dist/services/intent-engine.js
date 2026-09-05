@@ -267,6 +267,16 @@ class IntentEngine {
                 spokenIntro: 'Closing tab.',
             };
         }
+        if (/\b(?:undo|reopen|restore|bring\s+back)\s+(?:the\s+|closed\s+)?tab\b/i.test(text) || /\b(?:undo\s+close\s+tab|reopen\s+closed\s+tab)\b/i.test(text)) {
+            return {
+                type: 'browser_control',
+                action: 'undo_tab',
+                confidence: 0.98,
+                rawText,
+                cleanText,
+                spokenIntro: 'Reopening closed tab and reconnecting session memory.',
+            };
+        }
         if (/\b(?:pause|pause\s+video|pause\s+music|pause\s+song|pause\s+it|pause\s+this|stop\s+music|stop\s+playback)\b/i.test(text) || /^(?:pause|stop)\s+(?:it|this|the\s+video|the\s+music)$/i.test(text) || text === 'pause') {
             return {
                 type: 'browser_control',

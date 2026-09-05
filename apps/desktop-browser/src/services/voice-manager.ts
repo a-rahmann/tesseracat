@@ -158,6 +158,12 @@ export class VoiceManager {
       console.log('[Voice] Initializing persistent microphone stream...');
       const { sampleRate } = await this.capture.start({
         onPcmChunk: (chunk) => {
+          // Self-healing watchdog: if wake is enabled and not in TTS, auto-recover from idle to listening-for-wake
+          if (this.isWakeWordActive && !this.isTTSActive && this.state.status === 'idle') {
+            this.setState('listening-for-wake', 'Listening for "Hey Tesseract"');
+            this.wakeDetector.setEnabled(true);
+          }
+
           if (this.state.status === 'listening-for-wake' && !this.isTTSActive) {
             if (this.nativeSampleRate === 16000) {
               this.wakeDetector.processChunk(chunk);
@@ -265,11 +271,15 @@ export class VoiceManager {
     }
 
     console.log('[Voice] returning to wake listening');
+    this.isVerifyingWake = false;
+    this.commandSpeechFrames = 0;
+    this.hasSpoken = false;
     this.setState('listening-for-wake', 'Listening for "Hey Tesseract"');
     this.wakeDetector.setEnabled(true);
 
     try {
       await this.ensureAudioCapture();
+      await this.capture.resumeIfSuspended();
     } catch (err: any) {
       this.setState('error', undefined, err.message);
     }
@@ -465,10 +475,26 @@ export class VoiceManager {
     this.clearTimers();
     this.capturedChunks = [];
     this.hasSpoken = false;
+    this.commandSpeechFrames = 0;
+    this.isVerifyingWake = false;
     this.wakeDetector.reset();
 
-    if (this.isWakeWordActive && !this.isTTSActive) {
-      this.startWakeListening();
+    // Ensure audio capture is running and un-suspended
+    this.capture.resumeIfSuspended().catch(() => {});
+
+    if (this.isWakeWordActive) {
+      if (!this.isTTSActive) {
+        this.startWakeListening();
+      } else {
+        // Safety guard: if TTS is flagged active, set a failsafe 2.5s release
+        // so wake listening is 100% guaranteed to resume even if Chromium drops TTS events!
+        setTimeout(() => {
+          if (this.isTTSActive) {
+            console.log('[Voice] TTS safety timeout: forcing TTS release and resuming wake listening');
+            this.setSpeakingTTS(false);
+          }
+        }, 2500);
+      }
     } else {
       this.setState('idle', 'Session reset');
     }
@@ -485,7 +511,8 @@ export class VoiceManager {
       this.setState('tts', 'Speaking aloud');
     } else {
       console.log('[Voice] TTS finished: resuming wake detector');
-      this.resetVoiceSession();
+      this.wakeDetector.setEnabled(true);
+      this.startWakeListening();
     }
   }
 

@@ -70,6 +70,7 @@ class AudioCapture {
                 }
             };
             this.isCapturing = true;
+            this.startHealthWatchdog();
             return { sampleRate: nativeSampleRate };
         }
         catch (err) {
@@ -80,8 +81,31 @@ class AudioCapture {
             throw err;
         }
     }
+    watchdogInterval = null;
+    startHealthWatchdog() {
+        if (this.watchdogInterval)
+            clearInterval(this.watchdogInterval);
+        this.watchdogInterval = setInterval(() => {
+            if (this.isCapturing && this.audioContext) {
+                if (this.audioContext.state === 'suspended') {
+                    console.log('[Voice Watchdog] AudioContext was suspended, waking back up...');
+                    this.audioContext.resume().catch(() => { });
+                }
+            }
+        }, 2000);
+    }
+    async resumeIfSuspended() {
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+            console.log('[Voice] Explicitly resuming suspended AudioContext...');
+            await this.audioContext.resume().catch(() => { });
+        }
+    }
     async stop() {
         this.isCapturing = false;
+        if (this.watchdogInterval) {
+            clearInterval(this.watchdogInterval);
+            this.watchdogInterval = null;
+        }
         if (this.workletNode) {
             try {
                 this.workletNode.port.onmessage = null;

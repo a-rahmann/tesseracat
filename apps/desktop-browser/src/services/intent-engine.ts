@@ -26,7 +26,7 @@ export interface StructuredIntent {
   cleanText: string;
   targetUrl?: string;
   query?: string;
-  action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'scroll_down' | 'scroll_up' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
+  action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'undo_tab' | 'scroll_down' | 'scroll_up' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
   referent?: 'first' | 'second' | 'third' | 'last' | number;
   spokenIntro?: string;
   spokenFeedback?: string;
@@ -331,6 +331,16 @@ export class IntentEngine {
         rawText,
         cleanText,
         spokenIntro: 'Closing tab.',
+      };
+    }
+    if (/\b(?:undo|reopen|restore|bring\s+back)\s+(?:the\s+|closed\s+)?tab\b/i.test(text) || /\b(?:undo\s+close\s+tab|reopen\s+closed\s+tab)\b/i.test(text)) {
+      return {
+        type: 'browser_control',
+        action: 'undo_tab',
+        confidence: 0.98,
+        rawText,
+        cleanText,
+        spokenIntro: 'Reopening closed tab and reconnecting session memory.',
       };
     }
     if (/\b(?:pause|pause\s+video|pause\s+music|pause\s+song|pause\s+it|pause\s+this|stop\s+music|stop\s+playback)\b/i.test(text) || /^(?:pause|stop)\s+(?:it|this|the\s+video|the\s+music)$/i.test(text) || text === 'pause') {
