@@ -82,10 +82,11 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   console.log('[Whisper] Inference started...');
   const t0 = Date.now();
 
-  // Pass max_new_tokens: 64 to prevent Whisper autoregressive repetition loops on CPU
+  // Pass max_new_tokens: 40 and temperature: 0.0 for fastest deterministic decoding on CPU
   const output = await transcriber(audioFloat32, {
     task: 'transcribe',
-    max_new_tokens: 64,
+    max_new_tokens: 40,
+    temperature: 0.0,
     return_timestamps: false,
   });
 

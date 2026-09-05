@@ -206,7 +206,8 @@ export class VoiceManager {
               }
             } else if (this.hasSpoken && rms < silenceFloor) {
               if (!this.silenceTimer) {
-                const timeoutMs = this.recordingTrigger === 'wake' ? 1000 : 1600;
+                // Swift trailing silence detection: 550ms for wake commands, 800ms for PTT
+                const timeoutMs = this.recordingTrigger === 'wake' ? 550 : 800;
                 this.silenceTimer = setTimeout(() => {
                   if ((this.state.status === 'recording' || this.state.status === 'wake-detected') && this.hasSpoken) {
                     console.log(`[Voice] recording stopped (Reason: trailing_silence, Trigger: ${this.recordingTrigger})`);
@@ -410,7 +411,7 @@ export class VoiceManager {
             console.error('[AI] Execution error caught:', err);
             this.resetVoiceSession();
           });
-        }, 300);
+        }, 100);
         return;
       }
     }
@@ -422,7 +423,7 @@ export class VoiceManager {
 
     this.setState('wake-detected', `Score: ${score.toFixed(2)}`);
 
-    // Give 400ms for chime & visual wake recognition, while actively buffering command speech
+    // Immediate 180ms transition for chime & visual recognition while buffering command speech
     setTimeout(() => {
       if (this.state.status === 'wake-detected') {
         console.log('[Voice] recording started (Trigger: wake)');
@@ -444,7 +445,7 @@ export class VoiceManager {
           }
         }, 8000);
       }
-    }, 400);
+    }, 180);
   }
 
   /**

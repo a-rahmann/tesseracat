@@ -19,9 +19,9 @@ class WakeWordDetector {
     lastTriggerTime = 0;
     // Adaptive background noise floor tracking
     baselineRms = 0.008;
-    // 250ms pre-roll circular buffer at 16kHz (4000 samples) to catch word onsets
+    // 200ms pre-roll circular buffer at 16kHz (3200 samples) to catch word onsets
     sampleRate = 16000;
-    preRollSize = 4000;
+    preRollSize = 3200;
     preRollBuffer;
     preRollIndex = 0;
     // Utterance tracking
@@ -32,7 +32,7 @@ class WakeWordDetector {
     totalSpeechSamples = 0;
     onWakeCallback = null;
     constructor(config = {}) {
-        this.debounceMs = config.debounceMs ?? 1500;
+        this.debounceMs = config.debounceMs ?? 1000;
         this.isEnabled = config.enabled ?? false;
         this.preRollBuffer = new Float32Array(this.preRollSize);
         console.log(`[Wake] Detector initialized (Enabled: ${this.isEnabled}, Debounce: ${this.debounceMs}ms)`);
@@ -124,15 +124,15 @@ class WakeWordDetector {
             else {
                 this.silenceFrames = 0;
             }
-            // Trailing silence timeout (~380ms of silence, ~130 frames at ~46 samples each)
-            // Or safety timeout if user has spoken for > 3.2s
-            const isTrailingSilence = this.silenceFrames >= 130;
+            // Trailing silence timeout (~200ms of silence, ~70 frames at ~46 samples each)
+            // Gives near-instant response when user stops speaking the wake phrase
+            const isTrailingSilence = this.silenceFrames >= 70;
             const isMaxDuration = this.totalSpeechSamples >= this.sampleRate * 3.5;
             if (isTrailingSilence || isMaxDuration) {
                 const durationSec = this.totalSpeechSamples / this.sampleRate;
                 console.log(`[Wake] Utterance completed (${durationSec.toFixed(2)}s, Silence: ${this.silenceFrames} frames, MaxDur: ${isMaxDuration})`);
-                // Check if utterance is long enough to contain "Hey Tesseract" (minimum 0.45s)
-                if (this.totalSpeechSamples >= this.sampleRate * 0.45) {
+                // Check if utterance is long enough to contain "Hey Tesseract" or "Hi testrat" (minimum 0.32s)
+                if (this.totalSpeechSamples >= this.sampleRate * 0.32) {
                     const now = Date.now();
                     if (now - this.lastTriggerTime >= this.debounceMs) {
                         this.lastTriggerTime = now;
@@ -152,7 +152,7 @@ class WakeWordDetector {
                     }
                 }
                 else {
-                    console.log('[Wake] Discarded short noise burst (< 0.45s)');
+                    console.log('[Wake] Discarded short noise burst (< 0.32s)');
                 }
                 // Reset utterance tracking back to listening
                 this.isSpeaking = false;

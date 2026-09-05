@@ -107,7 +107,7 @@ export class IntentEngine {
     let raw = text.trim();
 
     // 1. Direct Regex matching all common Whisper acoustic/accent variations
-    const directWakeRegex = /^(?:hey|hi|hello|ok|yo|hate|head|he|a)?[\s,.-]*(?:tesseract|tesserract|tesserac|tessera|tasseract|tasheract|tazera|test\s*rats?|test\s*react|test\s*tracks?|test\s*racks?|tester\s*act|tess\s*react|tess\s*act|taste\s*rats?|taste\s*act|toss\s*a\s*rock|us\s*iraq|this\s*iraq|the\s*seract|deseract|desert\s*act|death\s*trap|that\s*a\s*rap|tess)(?:[,.!\s]+|$)/i;
+    const directWakeRegex = /^(?:hey|hi|hello|ok|yo|hate|head|he|a|high|aye)?[\s,.-]*(?:tesseract|tesserract|tesserac|tessera|tasseract|tasheract|tazera|test\s*rats?|test\s*rat|testrat|test\s*erect|tess\s*erect|tess\s*direct|test\s*react|tess\s*react|test\s*tracks?|test\s*racks?|tester\s*act|tess\s*act|test\s*act|taste\s*rats?|taste\s*rat|taste\s*act|toss\s*a\s*rock|toss\s*rock|us\s*iraq|this\s*iraq|the\s*seract|deseract|desert\s*act|death\s*trap|that\s*a\s*rap|tess)(?:[,.!\s]+|$)/i;
 
     let hasWakeWord = false;
     const m = raw.match(directWakeRegex);
@@ -129,7 +129,7 @@ export class IntentEngine {
           .replace(/[aeiouywh]/g, '')
           .replace(/(.)\1+/g, '$1');
 
-        if (/t.*s.*r.*[kts]/i.test(skeleton)) {
+        if (/t.*s.*r.*[kts]/i.test(skeleton) || /t.*s.*r.*t/i.test(skeleton)) {
           hasWakeWord = true;
           raw = words.slice(len).join(' ').trim();
           break;
