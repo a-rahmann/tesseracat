@@ -23,6 +23,8 @@ class IntentEngine {
         chatgpt: { domain: 'chatgpt.com', url: 'https://chatgpt.com', searchUrl: 'https://chatgpt.com/?q=' },
         spotify: { domain: 'spotify.com', url: 'https://open.spotify.com', searchUrl: 'https://open.spotify.com/search/', isMedia: true },
         netflix: { domain: 'netflix.com', url: 'https://www.netflix.com', searchUrl: 'https://www.netflix.com/search?q=', isMedia: true },
+        instagram: { domain: 'instagram.com', url: 'https://www.instagram.com', searchUrl: 'https://www.instagram.com/explore/tags/' },
+        insta: { domain: 'instagram.com', url: 'https://www.instagram.com', searchUrl: 'https://www.instagram.com/explore/tags/' },
         wikipedia: { domain: 'wikipedia.org', url: 'https://en.wikipedia.org', searchUrl: 'https://en.wikipedia.org/w/index.php?search=' },
         maps: { domain: 'maps.google.com', url: 'https://maps.google.com', searchUrl: 'https://maps.google.com/?q=' },
     };
@@ -188,7 +190,25 @@ class IntentEngine {
             this.recordIntent(ordinalControl);
             return ordinalControl;
         }
-        // 3. Direct Navigation ("Open YouTube", "Go to Google", "Launch GitHub", "Open Amazon")
+        // 3. Social DMs & Chat ("Check my messages", "Who texted me on insta", "Reply saying...")
+        const dmIntent = this.matchSocialDMs(text, rawTranscript, workingText, inNewTab);
+        if (dmIntent) {
+            this.recordIntent(dmIntent);
+            return dmIntent;
+        }
+        // 4. Form & Address Autofill ("Fill my billing address", "Fill shipping info")
+        const formIntent = this.matchAutofillForm(text, rawTranscript, workingText);
+        if (formIntent) {
+            this.recordIntent(formIntent);
+            return formIntent;
+        }
+        // 5. Co-Browsing & Media Discussion ("Look at this video together", "Suggest me something")
+        const coBrowseIntent = this.matchCoBrowsing(text, rawTranscript, workingText);
+        if (coBrowseIntent) {
+            this.recordIntent(coBrowseIntent);
+            return coBrowseIntent;
+        }
+        // 6. Direct Navigation ("Open YouTube", "Go to Google", "Launch GitHub", "Open Amazon")
         const navIntent = this.matchNavigation(text, rawTranscript, workingText, inNewTab);
         if (navIntent) {
             this.recordIntent(navIntent);
@@ -541,6 +561,77 @@ class IntentEngine {
                 query: subject || this.context.lastQuery,
                 spokenIntro: `Comparing ${referentRaw}${subject ? ` for ${subject}` : ''}.`,
                 parameters: { referent: referentRaw },
+            };
+        }
+        return null;
+    }
+    matchSocialDMs(text, rawText, cleanText, inNewTab) {
+        // 1. Reply to message (e.g. "reply telling them ...", "reply saying ...")
+        const replyMatch = text.match(/^(?:reply|respond|answer)(?:\s+(?:to\s+(?:them|him|her)|back))?(?:\s+(?:saying|telling\s+(?:them|him|her)|that))?\s+(.+)$/i);
+        if (replyMatch && replyMatch[1]) {
+            const replyBody = cleanText.slice(cleanText.toLowerCase().indexOf(replyMatch[1])).trim();
+            return {
+                type: 'reply_message',
+                action: 'reply_dm',
+                confidence: 0.94,
+                rawText,
+                cleanText,
+                query: replyBody,
+                spokenIntro: `Sending reply: "${replyBody}"`,
+            };
+        }
+        // 2. Check DMs / messages (e.g. "check my messages", "who texted me on insta", "check instagram dms")
+        if (/(?:check|read|open|see|look\s+at)\s+(?:my\s+)?(?:dms?|messages?|texts?|inbox)/i.test(text) ||
+            /(?:who\s+(?:texted|messaged|dm'?d)\s+me)/i.test(text) ||
+            /(?:check\s+(?:insta|instagram)\s*(?:dms?|messages?)?)/i.test(text)) {
+            const isInstagram = text.includes('insta') || (this.context.currentSite && this.context.currentSite.includes('instagram'));
+            const targetUrl = isInstagram ? 'https://www.instagram.com/direct/inbox/' : undefined;
+            return {
+                type: 'check_messages',
+                action: 'check_dms',
+                confidence: 0.95,
+                rawText,
+                cleanText,
+                targetUrl,
+                inNewTab,
+                spokenIntro: 'Checking your messages.',
+                parameters: { isInstagram },
+            };
+        }
+        return null;
+    }
+    matchAutofillForm(text, rawText, cleanText) {
+        if (/(?:fill|enter|autofill|populate|put)\s+(?:in\s+)?(?:my\s+)?(?:(?:billing|shipping|home)\s+)?(?:address|info|details|form)/i.test(text)) {
+            return {
+                type: 'autofill_form',
+                action: 'autofill_address',
+                confidence: 0.95,
+                rawText,
+                cleanText,
+                spokenIntro: 'Filling your address from secure local memory.',
+            };
+        }
+        return null;
+    }
+    matchCoBrowsing(text, rawText, cleanText) {
+        if (/(?:look\s+at\s+this\s+video\s+together|watch\s+this\s+together|what\s+is\s+this\s+video\s+about|react\s+to\s+this)/i.test(text)) {
+            return {
+                type: 'co_browse',
+                action: 'co_browse_video',
+                confidence: 0.95,
+                rawText,
+                cleanText,
+                spokenIntro: 'Analyzing this video with you.',
+            };
+        }
+        if (/(?:suggest\s+(?:me\s+)?(?:something|a\s+video)|what\s+should\s+i\s+watch\s+next)/i.test(text)) {
+            return {
+                type: 'co_browse',
+                action: 'suggest_media',
+                confidence: 0.95,
+                rawText,
+                cleanText,
+                spokenIntro: 'Looking at recommendations for you.',
             };
         }
         return null;

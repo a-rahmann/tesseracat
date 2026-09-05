@@ -4,6 +4,9 @@
  * using the executeWhenReady abstraction.
  */
 
+import { DOMAgent } from './dom-agent.js';
+import { UserMemoryStore, UserAddressProfile } from './user-memory.js';
+
 export interface AutomatorResult<T = any> {
   success: boolean;
   result?: T;
@@ -285,16 +288,78 @@ export class BrowserAutomator {
   }
 
   public async extractDirectMessage(contactName = ''): Promise<string> {
-    const script = `
-      (() => {
-        const msgs = Array.from(document.querySelectorAll('div[role="row"], div[data-testid="message-container"]'));
-        if (msgs.length === 0) return 'No active message thread visible';
-        const lastMsg = msgs[msgs.length - 1];
-        return lastMsg.textContent?.trim() || 'Found incoming message';
-      })()
-    `;
+    const res = await this.inspectSocialDMs();
+    if (res.success && res.result?.sender) {
+      return `${res.result.sender}: "${res.result.preview}"`;
+    }
+    return 'No active message thread visible';
+  }
+
+  /**
+   * Inject login watcher into the active page to auto-fill remembered username
+   * and monitor password input for 5-second typing inactivity auto-submission.
+   */
+  public async injectLoginWatcher(domain: string): Promise<AutomatorResult> {
+    const rememberedUser = UserMemoryStore.getInstance().getUsername(domain);
+    const script = DOMAgent.getLoginWatcherScript(rememberedUser);
     const result = await this.executeWhenReady<string>(script);
-    return result || 'Messages inspected';
+    console.log(`[Browser] Login watcher armed on ${domain} (Remembered: ${rememberedUser || 'None'})`);
+    return { success: Boolean(result), result };
+  }
+
+  /**
+   * Autofill shipping or billing address forms using user's saved local profile.
+   */
+  public async autofillAddress(profile?: UserAddressProfile): Promise<AutomatorResult<string>> {
+    const userProfile = profile || UserMemoryStore.getInstance().getAddressProfile();
+    if (!userProfile) {
+      return { success: false, error: 'No saved address profile found in local memory' };
+    }
+    const script = DOMAgent.getAutofillAddressScript(userProfile);
+    const result = await this.executeWhenReady<string>(script);
+    console.log(`[Browser] Autofill address completed: "${result}"`);
+    return { success: Boolean(result && !result.includes('No matching')), result: result || undefined };
+  }
+
+  /**
+   * Inspect social DMs (Instagram, Twitter, chat threads) to see who texted.
+   */
+  public async inspectSocialDMs(): Promise<AutomatorResult<{ platform?: string; sender?: string; preview?: string; unreadCount?: number }>> {
+    const script = DOMAgent.getDMInspectionScript();
+    const raw = await this.executeWhenReady<string>(script);
+    try {
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (!parsed.error) {
+          return { success: true, result: parsed };
+        }
+      }
+    } catch (_) {}
+    return { success: false, error: 'No direct messages found on active page' };
+  }
+
+  /**
+   * Type and send a direct message reply in the active chat thread.
+   */
+  public async sendDirectMessage(replyText: string): Promise<AutomatorResult<string>> {
+    const script = DOMAgent.getDMSendReplyScript(replyText);
+    const result = await this.executeWhenReady<string>(script);
+    return { success: Boolean(result && !result.includes('not found')), result: result || undefined };
+  }
+
+  /**
+   * Observe active YouTube / Shorts or webpage content for interactive co-browsing.
+   */
+  public async observeCoBrowsingContent(): Promise<AutomatorResult<{ contentType?: string; title?: string; channel?: string; description?: string; recommendations?: string[] }>> {
+    const script = DOMAgent.getCoBrowsingObservationScript();
+    const raw = await this.executeWhenReady<string>(script);
+    try {
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { success: true, result: parsed };
+      }
+    } catch (_) {}
+    return { success: false, error: 'Could not observe current page content' };
   }
 }
 

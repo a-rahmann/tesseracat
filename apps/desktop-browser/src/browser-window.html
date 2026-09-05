@@ -757,13 +757,74 @@
       padding: 8px 14px;
       border-radius: var(--radius-md);
       color: var(--text);
-      font-size: 12px;
-      box-shadow: var(--shadow-md);
-      animation: toast-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    /* USERNAME MEMORY PROMPT */
+    .memory-prompt {
+      position: absolute;
+      top: 50px;
+      right: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(20, 20, 26, 0.92);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 10px 16px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.2);
+      z-index: 110;
+      animation: prompt-slide-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
     }
-    @keyframes toast-in {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes prompt-slide-in {
+      from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .memory-prompt-icon {
+      font-size: 16px;
+    }
+    .memory-prompt-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    #memory-prompt-msg {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .memory-prompt-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .memory-prompt-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-memory-primary {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: opacity 120ms ease;
+    }
+    .btn-memory-primary:hover {
+      opacity: 0.9;
+    }
+    .btn-memory-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      font-size: 12px;
+      padding: 4px;
+      cursor: pointer;
+    }
+    .btn-memory-ghost:hover {
+      color: var(--text);
     }
   </style>
 </head>
@@ -924,14 +985,27 @@
       </div>
     </div>
 
+    <!-- USERNAME MEMORY PROMPT PILL -->
+    <div id="memory-prompt" class="memory-prompt hidden">
+      <div class="memory-prompt-icon">🔐</div>
+      <div class="memory-prompt-text">
+        <span id="memory-prompt-msg">Save username for this site?</span>
+        <span class="memory-prompt-sub">Passwords are never saved.</span>
+      </div>
+      <div class="memory-prompt-actions">
+        <button id="btn-memory-save" class="btn-memory-primary">Remember</button>
+        <button id="btn-memory-dismiss" class="btn-memory-ghost">✕</button>
+      </div>
+    </div>
+
     <!-- TOAST CONTAINER -->
     <div id="toast-container"></div>
   </div>
 
   <script>
     const path = require('path');
-    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine;
-    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null;
+    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore;
+    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null;
 
     try {
       const services = require(path.join(__dirname, '../dist/services/index.js'));
@@ -939,11 +1013,13 @@
       BrowserAutomator = services.BrowserAutomator;
       AIExecutionCoordinator = services.AIExecutionCoordinator;
       IntentEngine = services.IntentEngine;
+      UserMemoryStore = services.UserMemoryStore;
 
       if (VoiceManager) voiceManager = VoiceManager.getInstance();
       if (BrowserAutomator) automator = BrowserAutomator.getInstance();
       if (AIExecutionCoordinator) aiCoordinator = AIExecutionCoordinator.getInstance();
       if (IntentEngine) intentEngine = IntentEngine.getInstance();
+      if (UserMemoryStore) userMemory = UserMemoryStore.getInstance();
     } catch (err) {
       console.error('[Tesseract Init] Error loading compiled services from dist/services/index.js:', err);
     }
@@ -1080,8 +1156,45 @@
     window.hideStartPage = hideStartPage;
     window.showStartPage = showStartPage;
 
-    // Webview navigation listeners
+    // Webview navigation & DOM agent listeners
     const webviewEl = document.getElementById('webview');
+    let pendingDomainToSave = '';
+    let pendingUsernameToSave = '';
+
+    function showMemoryPrompt(domain, username) {
+      if (!domain || !username) return;
+      // Don't prompt if already remembered
+      if (userMemory && userMemory.getUsername(domain) === username) return;
+
+      pendingDomainToSave = domain;
+      pendingUsernameToSave = username;
+
+      const promptEl = document.getElementById('memory-prompt');
+      const msgEl = document.getElementById('memory-prompt-msg');
+      if (promptEl && msgEl) {
+        msgEl.textContent = `Remember username "${username}" for ${domain}?`;
+        promptEl.classList.remove('hidden');
+      }
+    }
+
+    function hideMemoryPrompt() {
+      document.getElementById('memory-prompt')?.classList.add('hidden');
+      pendingDomainToSave = '';
+      pendingUsernameToSave = '';
+    }
+
+    document.getElementById('btn-memory-save')?.addEventListener('click', () => {
+      if (pendingDomainToSave && pendingUsernameToSave && userMemory) {
+        userMemory.saveUsername(pendingDomainToSave, pendingUsernameToSave);
+        showToast(`Remembered @${pendingUsernameToSave} for ${pendingDomainToSave}`);
+      }
+      hideMemoryPrompt();
+    });
+
+    document.getElementById('btn-memory-dismiss')?.addEventListener('click', () => {
+      hideMemoryPrompt();
+    });
+
     if (webviewEl) {
       webviewEl.addEventListener('did-navigate', (e) => {
         const active = tabs.find(t => t.id === activeTabId);
@@ -1099,6 +1212,44 @@
         if (active) {
           active.title = e.title;
           renderTabs();
+        }
+      });
+
+      // Inject intelligent login watcher whenever page DOM is ready
+      webviewEl.addEventListener('dom-ready', () => {
+        try {
+          const currentUrl = webviewEl.getURL?.() || '';
+          if (currentUrl && !currentUrl.startsWith('about:')) {
+            const domain = new URL(currentUrl).hostname;
+            if (automator?.injectLoginWatcher) {
+              automator.injectLoginWatcher(domain).catch(() => {});
+            }
+          }
+        } catch (_) {}
+      });
+
+      // Capture DOMAgent events from webview (5s inactivity login, new username typed)
+      webviewEl.addEventListener('console-message', (e) => {
+        if (e.message && e.message.includes('[Tesseract DOM]')) {
+          console.log('[Webview Console]', e.message);
+          if (e.message.includes('Auto-submitting login')) {
+            showToast('⚡ Password entered — 5s typing pause auto-submitting login!');
+          }
+          if (e.message.includes('USERNAME_TYPED:')) {
+            try {
+              const payload = JSON.parse(e.message.split('USERNAME_TYPED:')[1]);
+              if (payload?.domain && payload?.username) {
+                showMemoryPrompt(payload.domain, payload.username);
+              }
+            } catch (_) {}
+          }
+        }
+      });
+
+      webviewEl.addEventListener('ipc-message', (e) => {
+        if (e.channel === 'TESSERACT_NEW_USERNAME_TYPED' && e.args?.[0]) {
+          const { domain, username } = e.args[0];
+          showMemoryPrompt(domain, username);
         }
       });
     }

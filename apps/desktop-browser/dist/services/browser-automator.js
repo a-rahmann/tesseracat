@@ -6,6 +6,8 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BrowserAutomator = void 0;
+const dom_agent_js_1 = require("./dom-agent.js");
+const user_memory_js_1 = require("./user-memory.js");
 class BrowserAutomator {
     static instance = null;
     static getInstance() {
@@ -269,16 +271,75 @@ class BrowserAutomator {
         return { success: true, result };
     }
     async extractDirectMessage(contactName = '') {
-        const script = `
-      (() => {
-        const msgs = Array.from(document.querySelectorAll('div[role="row"], div[data-testid="message-container"]'));
-        if (msgs.length === 0) return 'No active message thread visible';
-        const lastMsg = msgs[msgs.length - 1];
-        return lastMsg.textContent?.trim() || 'Found incoming message';
-      })()
-    `;
+        const res = await this.inspectSocialDMs();
+        if (res.success && res.result?.sender) {
+            return `${res.result.sender}: "${res.result.preview}"`;
+        }
+        return 'No active message thread visible';
+    }
+    /**
+     * Inject login watcher into the active page to auto-fill remembered username
+     * and monitor password input for 5-second typing inactivity auto-submission.
+     */
+    async injectLoginWatcher(domain) {
+        const rememberedUser = user_memory_js_1.UserMemoryStore.getInstance().getUsername(domain);
+        const script = dom_agent_js_1.DOMAgent.getLoginWatcherScript(rememberedUser);
         const result = await this.executeWhenReady(script);
-        return result || 'Messages inspected';
+        console.log(`[Browser] Login watcher armed on ${domain} (Remembered: ${rememberedUser || 'None'})`);
+        return { success: Boolean(result), result };
+    }
+    /**
+     * Autofill shipping or billing address forms using user's saved local profile.
+     */
+    async autofillAddress(profile) {
+        const userProfile = profile || user_memory_js_1.UserMemoryStore.getInstance().getAddressProfile();
+        if (!userProfile) {
+            return { success: false, error: 'No saved address profile found in local memory' };
+        }
+        const script = dom_agent_js_1.DOMAgent.getAutofillAddressScript(userProfile);
+        const result = await this.executeWhenReady(script);
+        console.log(`[Browser] Autofill address completed: "${result}"`);
+        return { success: Boolean(result && !result.includes('No matching')), result: result || undefined };
+    }
+    /**
+     * Inspect social DMs (Instagram, Twitter, chat threads) to see who texted.
+     */
+    async inspectSocialDMs() {
+        const script = dom_agent_js_1.DOMAgent.getDMInspectionScript();
+        const raw = await this.executeWhenReady(script);
+        try {
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (!parsed.error) {
+                    return { success: true, result: parsed };
+                }
+            }
+        }
+        catch (_) { }
+        return { success: false, error: 'No direct messages found on active page' };
+    }
+    /**
+     * Type and send a direct message reply in the active chat thread.
+     */
+    async sendDirectMessage(replyText) {
+        const script = dom_agent_js_1.DOMAgent.getDMSendReplyScript(replyText);
+        const result = await this.executeWhenReady(script);
+        return { success: Boolean(result && !result.includes('not found')), result: result || undefined };
+    }
+    /**
+     * Observe active YouTube / Shorts or webpage content for interactive co-browsing.
+     */
+    async observeCoBrowsingContent() {
+        const script = dom_agent_js_1.DOMAgent.getCoBrowsingObservationScript();
+        const raw = await this.executeWhenReady(script);
+        try {
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                return { success: true, result: parsed };
+            }
+        }
+        catch (_) { }
+        return { success: false, error: 'Could not observe current page content' };
     }
 }
 exports.BrowserAutomator = BrowserAutomator;

@@ -4,7 +4,7 @@
  * brittle regex chains. Maintains short-lived task context to resolve
  * pronouns ("the first one"), follow-ups ("go back"), and contextual searches ("open Amazon" -> "search Sony headphones").
  */
-export type IntentType = 'navigation' | 'media_playback' | 'search' | 'browser_control' | 'shopping' | 'comparison' | 'page_action' | 'clarification';
+export type IntentType = 'navigation' | 'media_playback' | 'search' | 'browser_control' | 'shopping' | 'comparison' | 'page_action' | 'check_messages' | 'reply_message' | 'autofill_form' | 'co_browse' | 'clarification';
 export interface StructuredIntent {
     type: IntentType;
     confidence: number;
@@ -12,7 +12,7 @@ export interface StructuredIntent {
     cleanText: string;
     targetUrl?: string;
     query?: string;
-    action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab';
+    action?: 'navigate' | 'play' | 'search' | 'back' | 'forward' | 'reload' | 'click' | 'compare' | 'pause' | 'resume' | 'new_tab' | 'close_tab' | 'check_dms' | 'reply_dm' | 'autofill_address' | 'co_browse_video' | 'suggest_media';
     referent?: 'first' | 'second' | 'third' | 'last' | number;
     spokenIntro?: string;
     spokenFeedback?: string;
@@ -64,6 +64,9 @@ export declare class IntentEngine {
     private matchSearch;
     private matchShopping;
     private matchComparison;
+    private matchSocialDMs;
+    private matchAutofillForm;
+    private matchCoBrowsing;
     private createFallbackIntent;
     private recordIntent;
 }

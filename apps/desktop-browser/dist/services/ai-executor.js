@@ -213,6 +213,89 @@ class AIExecutionCoordinator {
                     }
                     break;
                 }
+                case 'check_messages': {
+                    console.log('[AI] action: check_messages');
+                    this.updateState({ progress: 0.4, currentAction: 'Checking messages...' });
+                    if (intent.targetUrl) {
+                        if (intent.inNewTab)
+                            await this.automator.createTab(intent.targetUrl);
+                        else
+                            await this.automator.navigate(intent.targetUrl);
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                    const dmRes = await this.automator.inspectSocialDMs();
+                    if (dmRes.success && dmRes.result?.sender) {
+                        const announcement = `${dmRes.result.sender} messaged: "${dmRes.result.preview}".`;
+                        this.updateState({ progress: 1.0, currentAction: announcement });
+                        await this.speak(announcement);
+                        success = true;
+                        actionResult = dmRes.result;
+                    }
+                    else {
+                        const notice = "I checked the messages, but no unread messages are visible right now.";
+                        this.updateState({ progress: 1.0, currentAction: notice });
+                        await this.speak(notice);
+                        success = true;
+                    }
+                    break;
+                }
+                case 'reply_message': {
+                    const replyText = intent.query || intent.cleanText;
+                    console.log(`[AI] action: reply_message ("${replyText}")`);
+                    this.updateState({ progress: 0.6, currentAction: `Sending reply: "${replyText}"` });
+                    const replyRes = await this.automator.sendDirectMessage(replyText);
+                    if (replyRes.success) {
+                        await this.speak(`Sent reply: "${replyText}".`);
+                        success = true;
+                        actionResult = replyRes.result;
+                    }
+                    else {
+                        await this.speak("I couldn't find the message input field to send a reply.");
+                        success = false;
+                    }
+                    break;
+                }
+                case 'autofill_form': {
+                    console.log('[AI] action: autofill_form');
+                    this.updateState({ progress: 0.6, currentAction: 'Filling address from local memory...' });
+                    const fillRes = await this.automator.autofillAddress();
+                    if (fillRes.success) {
+                        await this.speak("I've populated your saved address details into the form.");
+                        success = true;
+                        actionResult = fillRes.result;
+                    }
+                    else {
+                        await this.speak(fillRes.error || "No matching address fields found on this page.");
+                        success = false;
+                    }
+                    break;
+                }
+                case 'co_browse': {
+                    console.log(`[AI] action: co_browse (${intent.action})`);
+                    this.updateState({ progress: 0.6, currentAction: 'Observing content...' });
+                    const obsRes = await this.automator.observeCoBrowsingContent();
+                    if (obsRes.success && obsRes.result) {
+                        const data = obsRes.result;
+                        if (intent.action === 'suggest_media' && data.recommendations && data.recommendations.length > 0) {
+                            const suggestions = data.recommendations.slice(0, 2).join(' or ');
+                            await this.speak(`You might like watching: ${suggestions}. Want me to play one?`);
+                        }
+                        else if (data.title) {
+                            const creator = data.channel ? ` by ${data.channel}` : '';
+                            await this.speak(`We are viewing "${data.title}"${creator}.`);
+                        }
+                        else {
+                            await this.speak("I am watching this page with you.");
+                        }
+                        success = true;
+                        actionResult = data;
+                    }
+                    else {
+                        await this.speak("I'm observing the screen with you.");
+                        success = true;
+                    }
+                    break;
+                }
                 case 'comparison': {
                     console.log(`[AI] action: comparison (${intent.query})`);
                     if (intent.targetUrl) {
