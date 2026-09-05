@@ -27,6 +27,10 @@ export class BrowserAutomator {
     return document.getElementById('webview');
   }
 
+  public async executeScript<T = any>(script: string, timeoutMs = 6000): Promise<T | null> {
+    return this.executeWhenReady<T>(script, timeoutMs);
+  }
+
   /**
    * Execute JavaScript inside a webview only after verifying it is attached,
    * not destroyed, and ready to receive commands.
@@ -273,17 +277,81 @@ export class BrowserAutomator {
   }
 
   public async scrollDown(pixels = 500): Promise<AutomatorResult> {
-    console.log(`[Browser] scrollDown started (${pixels}px)`);
-    const script = `window.scrollBy({ top: ${pixels}, behavior: 'smooth' });`;
+    return this.scroll('down', pixels);
+  }
+
+  public async scrollUp(pixels = 500): Promise<AutomatorResult> {
+    return this.scroll('up', pixels);
+  }
+
+  public async scroll(direction: 'up' | 'down' | 'top' | 'bottom', amount = 450): Promise<AutomatorResult> {
+    console.log(`[Browser] scroll started: ${direction} (${amount}px)`);
+    let script = '';
+    switch (direction) {
+      case 'up':
+        script = `window.scrollBy({ top: -${amount}, behavior: 'smooth' });`;
+        break;
+      case 'down':
+        script = `window.scrollBy({ top: ${amount}, behavior: 'smooth' });`;
+        break;
+      case 'top':
+        script = `window.scrollTo({ top: 0, behavior: 'smooth' });`;
+        break;
+      case 'bottom':
+        script = `window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });`;
+        break;
+      default:
+        script = `window.scrollBy({ top: ${amount}, behavior: 'smooth' });`;
+    }
     await this.executeWhenReady(script);
     return { success: true };
   }
 
-  public async scrollUp(pixels = 500): Promise<AutomatorResult> {
-    console.log(`[Browser] scrollUp started (${pixels}px)`);
-    const script = `window.scrollBy({ top: -${pixels}, behavior: 'smooth' });`;
-    await this.executeWhenReady(script);
-    return { success: true };
+  public async wait(ms = 1000): Promise<AutomatorResult> {
+    console.log(`[Browser] wait started: ${ms}ms`);
+    await new Promise((r) => setTimeout(r, ms));
+    return { success: true, result: `Waited ${ms}ms` };
+  }
+
+  public async type(options: { selector?: string; elementId?: string; text: string; pressEnter?: boolean }): Promise<AutomatorResult> {
+    const { selector, elementId, text, pressEnter = false } = options;
+    console.log(`[Browser] type started: text="${text}", selector="${selector || ''}", elementId="${elementId || ''}", pressEnter=${pressEnter}`);
+    const script = `
+      (() => {
+        let el = null;
+        if (${JSON.stringify(elementId || '')}) {
+          el = document.querySelector('[data-tesseract-id="${elementId}"]') || document.getElementById('${elementId}');
+        }
+        if (!el && ${JSON.stringify(selector || '')}) {
+          el = document.querySelector(${JSON.stringify(selector || '')});
+        }
+        if (!el) return false;
+
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus();
+
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+          el.value = ${JSON.stringify(text)};
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
+          el.textContent = ${JSON.stringify(text)};
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(text)} }));
+        }
+
+        if (${Boolean(pressEnter)}) {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          if (el.form) {
+            el.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
+        return true;
+      })()
+    `;
+    const result = await this.executeWhenReady<boolean>(script);
+    return { success: Boolean(result), result };
   }
 
   public async pauseMedia(): Promise<AutomatorResult> {

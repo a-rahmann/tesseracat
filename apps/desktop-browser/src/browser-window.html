@@ -1547,10 +1547,14 @@
       });
 
       voiceManager.onTranscription((rawText, intent) => {
-        showToast(`Heard: "${rawText}"`);
-        if (hudTranscriptVal) hudTranscriptVal.textContent = `"${rawText}"`;
-        if (hudIntentVal && intent) {
-          hudIntentVal.textContent = `Type: ${intent.type} (Conf: ${intent.confidence}) | Action: ${intent.action || '—'}`;
+        if (rawText && rawText.trim()) {
+          showToast(`Heard: "${rawText}"`);
+          if (hudTranscriptVal) hudTranscriptVal.textContent = `"${rawText}"`;
+          if (hudIntentVal && intent) {
+            hudIntentVal.textContent = `Type: ${intent.type} (Conf: ${intent.confidence}) | Action: ${intent.action || '—'}`;
+          }
+        } else {
+          showToast("Couldn't catch that command. Please try speaking again.");
         }
       });
     }

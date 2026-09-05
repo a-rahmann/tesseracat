@@ -87,7 +87,21 @@ export class CommandRouter {
       return { action: 'OPEN', target: 'tab', location: 'new_tab', rawText: raw, cleanText: clean, isFastPath: true, requiresBrowserPerception: false };
     }
 
-    // 2. TARGET-AWARE PLAY COMMANDS ("Play Loser on YouTube", "Play cats", "Play the first video")
+    // 2. TARGET-AWARE PLAY COMMANDS ("Play Loser on YouTube", "Open YouTube and play Loser", "Play cats")
+    const compoundMatch = clean.match(/^(?:open\s+youtube(?:\s+music)?\s+(?:and|&)\s+(?:play|listen\s+to)\s+(.+))$/i);
+    if (compoundMatch) {
+      return {
+        action: 'PLAY',
+        target: 'video',
+        location: 'youtube',
+        query: compoundMatch[1].trim(),
+        rawText: raw,
+        cleanText: clean,
+        isFastPath: false,
+        requiresBrowserPerception: true,
+      };
+    }
+
     const playMatch = clean.match(/^play\s+(.+)$/i);
     if (playMatch) {
       let subject = playMatch[1].trim();

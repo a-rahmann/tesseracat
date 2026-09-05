@@ -13,6 +13,7 @@ export declare class BrowserAutomator {
     private static instance;
     static getInstance(): BrowserAutomator;
     getWebview(): any;
+    executeScript<T = any>(script: string, timeoutMs?: number): Promise<T | null>;
     /**
      * Execute JavaScript inside a webview only after verifying it is attached,
      * not destroyed, and ready to receive commands.
@@ -33,6 +34,14 @@ export declare class BrowserAutomator {
     closeCurrentTab(): Promise<AutomatorResult>;
     scrollDown(pixels?: number): Promise<AutomatorResult>;
     scrollUp(pixels?: number): Promise<AutomatorResult>;
+    scroll(direction: 'up' | 'down' | 'top' | 'bottom', amount?: number): Promise<AutomatorResult>;
+    wait(ms?: number): Promise<AutomatorResult>;
+    type(options: {
+        selector?: string;
+        elementId?: string;
+        text: string;
+        pressEnter?: boolean;
+    }): Promise<AutomatorResult>;
     pauseMedia(): Promise<AutomatorResult>;
     resumeMedia(): Promise<AutomatorResult>;
     extractDirectMessage(contactName?: string): Promise<string>;

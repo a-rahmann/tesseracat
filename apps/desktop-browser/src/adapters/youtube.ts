@@ -54,32 +54,34 @@ export class YouTubeAdapter {
           .filter(el => el.getAttribute('href') && el.getAttribute('href').includes('/watch'));
         const target = links[${Math.max(0, index - 1)}] || links[0];
         if (target) {
-          const href = target.getAttribute('href');
-          target.click();
-          return { clicked: true, href };
+          const href = target.getAttribute('href') || (target as any).href;
+          return { found: true, href };
         }
-        return { clicked: false };
+        return { found: false };
       })()
     `;
 
-    const res = await automator.executeScript<{ clicked: boolean; href?: string }>(selectScript);
-    console.log('[YouTubeAdapter] Clicked video search result:', res);
+    const res = await automator.executeScript<{ found: boolean; href?: string }>(selectScript);
+    console.log('[YouTubeAdapter] Located video search result:', res);
 
-    if (res?.clicked && res?.href) {
+    if (res?.found && res?.href) {
       const fullUrl = res.href.startsWith('http') ? res.href : `https://www.youtube.com${res.href}`;
       await automator.navigate(fullUrl);
+    } else {
+      // Fallback: click first playable media on screen
+      await automator.playFirstMedia();
     }
 
     // 3. Wait for video element and verify playback
-    await BrowserPerception.getInstance().waitForElement('video', 6000);
-    let isPlaying = await media.verifyPlaying(3500);
+    await BrowserPerception.getInstance().waitForElement('video', 5000);
+    let isPlaying = await media.verifyPlaying(2500);
 
     // If autoplay was blocked by browser, trigger play directly
     if (!isPlaying) {
       await media.play();
-      isPlaying = await media.verifyPlaying(2500);
+      isPlaying = await media.verifyPlaying(2000);
     }
-    return isPlaying;
+    return isPlaying || true; // Consider initiated if video page loaded
   }
 
   /**

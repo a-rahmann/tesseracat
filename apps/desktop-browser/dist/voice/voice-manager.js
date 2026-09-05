@@ -308,9 +308,9 @@ class VoiceManager {
         }
         if (this.currentState !== 'COMMAND_LISTENING')
             return;
-        // Reject audio if user did not speak or if duration is < 0.6s (9600 samples at 16kHz)
-        if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 9600) {
-            console.log(`[VoiceManager] Captured audio too short (${this.totalCommandSamples} samples < 9600), discarding without Whisper freeze.`);
+        // Reject audio if duration is < 0.4s (6400 samples at 16kHz)
+        if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 6400) {
+            console.log(`[VoiceManager] Captured audio too short (${this.totalCommandSamples} samples < 6400), discarding.`);
             this.resetToWakeListening();
             return;
         }
@@ -323,13 +323,18 @@ class VoiceManager {
         }
         this.commandAudioChunks = [];
         this.totalCommandSamples = 0;
-        // Check RMS of full buffer - if pure silence or ambient noise, discard without running Whisper!
+        // Check peak amplitude and active speech RMS (do not reject conversational volume speech)
+        let maxAmp = 0;
         let sumSq = 0;
-        for (let i = 0; i < fullBuffer.length; i++)
+        for (let i = 0; i < fullBuffer.length; i++) {
+            const absVal = Math.abs(fullBuffer[i]);
+            if (absVal > maxAmp)
+                maxAmp = absVal;
             sumSq += fullBuffer[i] * fullBuffer[i];
+        }
         const avgRms = Math.sqrt(sumSq / fullBuffer.length);
-        if (avgRms < 0.008) {
-            console.log(`[VoiceManager] Audio buffer is ambient silence (RMS: ${avgRms.toFixed(5)} < 0.008), skipping Whisper to prevent UI freeze.`);
+        if (maxAmp < 0.01 && avgRms < 0.0025) {
+            console.log(`[VoiceManager] Audio buffer is dead silence (Max: ${maxAmp.toFixed(4)}, RMS: ${avgRms.toFixed(5)}), skipping Whisper.`);
             this.resetToWakeListening();
             return;
         }
@@ -338,6 +343,13 @@ class VoiceManager {
             const transcription = await whisper_js_1.WhisperBridge.transcribe(fullBuffer);
             console.log(`[VoiceManager] Transcribed: "${transcription}"`);
             if (!transcription || transcription.trim().length === 0) {
+                console.warn('[VoiceManager] Whisper produced empty transcription for speech buffer.');
+                for (const listener of this.transcriptionListeners) {
+                    try {
+                        listener('');
+                    }
+                    catch { }
+                }
                 this.resetToWakeListening();
                 return;
             }
@@ -427,8 +439,14 @@ class VoiceManager {
             if (targetTag === 'input' || targetTag === 'textarea')
                 return;
             if ((e.key === 't' || e.key === 'T') && !e.repeat && !e.metaKey && !e.ctrlKey) {
-                console.log('[Hotkey] T pressed -> push-to-talk');
-                this.startPushToTalk();
+                if (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED') {
+                    console.log('[Hotkey] T pressed -> stopping command recording & transcribing');
+                    this.finishCommandRecording();
+                }
+                else {
+                    console.log('[Hotkey] T pressed -> push-to-talk start');
+                    this.startPushToTalk();
+                }
             }
             else if (e.key === 'Escape') {
                 console.log('[Hotkey] Escape pressed -> interrupt');

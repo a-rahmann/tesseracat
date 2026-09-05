@@ -7,7 +7,7 @@ class VoiceActivityDetector {
     minSpeechFrames;
     noiseFloorAdaptRate;
     speechMultiplier;
-    baselineRms = 0.008;
+    baselineRms = 0.003;
     isSpeaking = false;
     consecutiveSpeechFrames = 0;
     consecutiveSilenceFrames = 0;
@@ -18,12 +18,12 @@ class VoiceActivityDetector {
     constructor(config = {}) {
         this.sampleRate = config.sampleRate ?? 16000;
         const trailingMs = Math.max(400, Math.min(2000, config.trailingSilenceMs ?? 950));
-        const minSpeechMs = config.minSpeechDurationMs ?? 220;
+        const minSpeechMs = config.minSpeechDurationMs ?? 180;
         const msPerFrame = (this.frameSize / this.sampleRate) * 1000;
         this.trailingSilenceFrames = Math.round(trailingMs / msPerFrame);
-        this.minSpeechFrames = Math.max(4, Math.round(minSpeechMs / msPerFrame));
+        this.minSpeechFrames = Math.max(3, Math.round(minSpeechMs / msPerFrame));
         this.noiseFloorAdaptRate = config.noiseFloorAdaptRate ?? 0.008;
-        this.speechMultiplier = config.speechEnergyMultiplier ?? 2.0;
+        this.speechMultiplier = config.speechEnergyMultiplier ?? 1.7;
     }
     reset() {
         this.isSpeaking = false;
@@ -54,7 +54,7 @@ class VoiceActivityDetector {
             }
         }
         const rms = Math.sqrt(sumSq / samples.length);
-        const speechThreshold = Math.max(0.012, this.baselineRms * this.speechMultiplier);
+        const speechThreshold = Math.max(0.004, this.baselineRms * this.speechMultiplier);
         if (!this.isSpeaking) {
             // Adapt baseline smoothly during silence
             this.baselineRms = this.baselineRms * (1 - this.noiseFloorAdaptRate) + rms * this.noiseFloorAdaptRate;

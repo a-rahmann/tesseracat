@@ -56,20 +56,20 @@ async function transcribeAudioBuffer(audioFloat32) {
     }
     const rms = Math.sqrt(sumSq / sampleCount);
     console.log(`[Whisper] Received ${sampleCount} samples (~${durationSec.toFixed(2)}s) | Min: ${min.toFixed(4)}, Max: ${max.toFixed(4)}, RMS: ${rms.toFixed(5)}${nonFiniteCount > 0 ? ` (Fixed ${nonFiniteCount} non-finite samples)` : ''}`);
-    // Reject audio that is too short (< 0.6s / 9600 samples at 16kHz)
-    if (sampleCount < 9600) {
-        console.log('[Whisper] Rejected: audio too short (< 0.6s / 9600 samples)');
+    // Reject audio that is too short (< 0.4s / 6400 samples at 16kHz)
+    if (sampleCount < 6400) {
+        console.log('[Whisper] Rejected: audio too short (< 0.4s / 6400 samples)');
         return '';
     }
-    // Reject pure silence or faint background murmur (RMS < 0.008)
-    if (rms < 0.008) {
-        console.log('[Whisper] Rejected: audio is ambient background noise (RMS < 0.008)');
+    const maxAmp = Math.max(Math.abs(min), Math.abs(max));
+    // Reject pure digital zero or non-speech background murmur
+    if (maxAmp < 0.01 && rms < 0.002) {
+        console.log('[Whisper] Rejected: audio is ambient background noise (Max < 0.01, RMS < 0.002)');
         return '';
     }
     const transcriber = await getTranscriber();
     // Normalize amplitude so intentional speech is cleanly scaled without amplifying noise
-    const maxAmp = Math.max(Math.abs(min), Math.abs(max));
-    if (maxAmp >= 0.025 && maxAmp < 0.7) {
+    if (maxAmp >= 0.015 && maxAmp < 0.7) {
         const scale = 0.85 / maxAmp;
         for (let i = 0; i < sampleCount; i++) {
             audioFloat32[i] *= scale;
