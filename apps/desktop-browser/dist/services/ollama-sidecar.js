@@ -41,10 +41,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OllamaSidecar = void 0;
 const child_process_1 = require("child_process");
 const fs = __importStar(require("fs"));
+const path_1 = __importDefault(require("path"));
 class OllamaSidecar {
     static instance = null;
     process = null;
@@ -111,19 +115,37 @@ class OllamaSidecar {
         }
     }
     /**
-     * Look for ollama binary in common macOS and Linux install directories.
+     * Look for ollama binary across macOS, Windows, and Linux.
      */
     findOllamaBinary() {
-        const candidates = [
-            '/opt/homebrew/bin/ollama',
-            '/usr/local/bin/ollama',
-            '/Applications/Ollama.app/Contents/Resources/ollama',
-            `${process.env.HOME}/.local/bin/ollama`,
-            '/usr/bin/ollama',
-        ];
+        const isWindows = process.platform === 'win32';
+        const candidates = [];
+        if (isWindows) {
+            const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path_1.default.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
+            const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+            if (localAppData) {
+                candidates.push(path_1.default.join(localAppData, 'Programs', 'Ollama', 'ollama.exe'));
+            }
+            candidates.push(path_1.default.join(programFiles, 'Ollama', 'ollama.exe'));
+        }
+        else {
+            candidates.push('/opt/homebrew/bin/ollama', '/usr/local/bin/ollama', '/Applications/Ollama.app/Contents/Resources/ollama', `${process.env.HOME || ''}/.local/bin/ollama`, '/usr/bin/ollama');
+        }
         for (const p of candidates) {
-            if (fs.existsSync(p)) {
+            if (p && fs.existsSync(p)) {
                 return p;
+            }
+        }
+        // Check system PATH
+        const envPath = process.env.PATH || '';
+        const pathDirs = envPath.split(path_1.default.delimiter);
+        const exeName = isWindows ? 'ollama.exe' : 'ollama';
+        for (const dir of pathDirs) {
+            if (!dir)
+                continue;
+            const fullPath = path_1.default.join(dir, exeName);
+            if (fs.existsSync(fullPath)) {
+                return fullPath;
             }
         }
         return null;

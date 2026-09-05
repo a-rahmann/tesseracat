@@ -10,6 +10,7 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
+import path from 'path';
 
 export class OllamaSidecar {
   private static instance: OllamaSidecar | null = null;
@@ -85,22 +86,47 @@ export class OllamaSidecar {
   }
 
   /**
-   * Look for ollama binary in common macOS and Linux install directories.
+   * Look for ollama binary across macOS, Windows, and Linux.
    */
   public findOllamaBinary(): string | null {
-    const candidates = [
-      '/opt/homebrew/bin/ollama',
-      '/usr/local/bin/ollama',
-      '/Applications/Ollama.app/Contents/Resources/ollama',
-      `${process.env.HOME}/.local/bin/ollama`,
-      '/usr/bin/ollama',
-    ];
+    const isWindows = process.platform === 'win32';
+    const candidates: string[] = [];
+
+    if (isWindows) {
+      const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
+      const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+      if (localAppData) {
+        candidates.push(path.join(localAppData, 'Programs', 'Ollama', 'ollama.exe'));
+      }
+      candidates.push(path.join(programFiles, 'Ollama', 'ollama.exe'));
+    } else {
+      candidates.push(
+        '/opt/homebrew/bin/ollama',
+        '/usr/local/bin/ollama',
+        '/Applications/Ollama.app/Contents/Resources/ollama',
+        `${process.env.HOME || ''}/.local/bin/ollama`,
+        '/usr/bin/ollama'
+      );
+    }
 
     for (const p of candidates) {
-      if (fs.existsSync(p)) {
+      if (p && fs.existsSync(p)) {
         return p;
       }
     }
+
+    // Check system PATH
+    const envPath = process.env.PATH || '';
+    const pathDirs = envPath.split(path.delimiter);
+    const exeName = isWindows ? 'ollama.exe' : 'ollama';
+    for (const dir of pathDirs) {
+      if (!dir) continue;
+      const fullPath = path.join(dir, exeName);
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
+    }
+
     return null;
   }
 

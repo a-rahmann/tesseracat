@@ -22,7 +22,7 @@ export declare class OllamaSidecar {
      */
     ping(): Promise<boolean>;
     /**
-     * Look for ollama binary in common macOS and Linux install directories.
+     * Look for ollama binary across macOS, Windows, and Linux.
      */
     findOllamaBinary(): string | null;
     /**
