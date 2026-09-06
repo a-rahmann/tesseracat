@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, session, shell, dialog, Menu } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { AgentOrchestrator } from '../../agent-runtime/dist/index.js';
@@ -93,6 +93,57 @@ orchestrator.registerTool({
   }
 });
 
+function setupApplicationMenu() {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [{ role: 'quit' }]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Developer',
+      submenu: [
+        {
+          label: 'Open Tesseract Shell DevTools',
+          accelerator: 'CommandOrControl+Shift+I',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.openDevTools({ mode: 'detach' });
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -101,8 +152,8 @@ function createWindow() {
     backgroundColor: '#030712',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
       webviewTag: true,
     },
   });
@@ -130,7 +181,7 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Automatically grant microphone and media permissions in Electron
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(true);
@@ -138,7 +189,33 @@ app.whenReady().then(() => {
 
   session.defaultSession.setPermissionCheckHandler(() => true);
 
+  setupApplicationMenu();
   createWindow();
+
+  // Environment-variable-controlled main-process smoke test (Dev only)
+  if (process.env.TESSERACT_LOCAL_AI_SMOKE_TEST === '1') {
+    try {
+      const gemmaProvider = orchestrator.getGemmaProvider();
+      const startTime = Date.now();
+      const health = await gemmaProvider.checkHealth();
+      const latency = Date.now() - startTime;
+
+      console.log('[Tesseract Local AI] Health Status:', health.status);
+      console.log('[Tesseract Local AI] Model Name:', health.modelName || 'none');
+      console.log('[Tesseract Local AI] Latency:', `${latency}ms`);
+
+      try {
+        const response = await gemmaProvider.chat(
+          'Reply with exactly: Tesseract local Gemma is working.'
+        );
+        console.log('[Tesseract Local AI] Final Answer:', response);
+      } catch (chatError: any) {
+        console.log('[Tesseract Local AI] Final Answer: unavailable -', chatError.message || chatError);
+      }
+    } catch (error: any) {
+      console.error('[Tesseract Local AI] Smoke test failed:', error.message || error);
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -184,37 +261,60 @@ app.on('window-all-closed', () => {
 });
 
 // IPC Handlers
-ipcMain.handle('set-api-key', async (_event, apiKey: string) => {
-  if (orchestrator && (orchestrator as any).llmProvider) {
-    (orchestrator as any).llmProvider.setApiKey(apiKey);
-  }
-  return { success: true };
+ipcMain.handle('gemma-health-check', async () => {
+  return orchestrator.checkLocalHealth();
 });
 
-ipcMain.handle('set-llm-config', async (_event, { apiKey, localUrl, modelName, strategy }: any) => {
-  if (orchestrator && (orchestrator as any).llmProvider) {
-    if (apiKey !== undefined) (orchestrator as any).llmProvider.setApiKey(apiKey);
-    if (localUrl !== undefined || modelName !== undefined) {
-      (orchestrator as any).llmProvider.setLocalConfig(localUrl || 'http://localhost:11434', modelName || 'gemma3');
-    }
-    if (strategy !== undefined) (orchestrator as any).llmProvider.setRoutingStrategy(strategy);
+ipcMain.handle('classify-intent', async (_event, { input = '', contextData = {} }: any) => {
+  try {
+    const classification = await orchestrator.classifyIntent(input, contextData);
+    return { success: true, classification };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('generate-ai-response', async (_event, { query = '', contextData = {} }: any) => {
+  try {
+    const response = await orchestrator.generateResponse(query, contextData);
+    return { success: true, response };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('set-api-key', async (_event, _apiKey: string) => {
+  // Local-only mode: cloud API key is ignored to ensure strict zero-cloud policy
+  return { success: true, localOnly: true };
+});
+
+ipcMain.handle('set-llm-config', async (_event, { localUrl, modelName }: any) => {
+  if (localUrl) {
+    orchestrator.getGemmaProvider(); // ensures initialization
+  }
+  if (modelName) {
+    orchestrator.getGemmaProvider().setModelName(modelName);
   }
   return { success: true };
 });
 
 ipcMain.handle('execute-agent-task', async (_event, { profileId = 'abdul-default', goal = '', contextData = {} }) => {
   try {
-    const taskRecord = await (orchestrator as any).createTaskAndPlan(profileId, goal);
-    const steps = taskRecord.planSteps || [];
-    const context: PolicyContext = { profileId, isAutonomousMission: true, dailyCloudSpendCapUSD: 10, currentCloudSpendUSD: 0.05 };
-    
-    const results = [];
-    for (let i = 0; i < steps.length; i++) {
-      const res = await orchestrator.executeStep(taskRecord.id, steps[i].id, context);
-      results.push(res);
-    }
-
-    return { success: true, task: orchestrator.getTask(profileId, taskRecord.id), stepResults: results };
+    const routedResult = await orchestrator.routeAndExecute(profileId, goal, contextData);
+    return {
+      success: true,
+      routedResult,
+      intent: routedResult.intent,
+      route: routedResult.route,
+      toolUsed: routedResult.toolUsed,
+      model: routedResult.model,
+      response: routedResult.response,
+      task: routedResult.task,
+      stepResults: routedResult.stepResults,
+      requiresApproval: routedResult.requiresApproval,
+      approvalReason: routedResult.approvalReason,
+      actionSummary: routedResult.actionSummary,
+    };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

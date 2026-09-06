@@ -2241,6 +2241,22 @@
             </svg>
           </button>
 
+          <button class="header-btn" id="btn-local-ai-diag" title="Local AI Diagnostics (Dev)" style="color: #00f0ff; border: 1px solid rgba(0,240,255,0.3); border-radius: 6px; padding: 0 8px; font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 5px; height: 28px; background: rgba(0,240,255,0.08);">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <rect x="9" y="9" width="6" height="6" />
+              <line x1="9" y1="1" x2="9" y2="4" />
+              <line x1="15" y1="1" x2="15" y2="4" />
+              <line x1="9" y1="20" x2="9" y2="23" />
+              <line x1="15" y1="20" x2="15" y2="23" />
+              <line x1="20" y1="9" x2="23" y2="9" />
+              <line x1="20" y1="14" x2="23" y2="14" />
+              <line x1="1" y1="9" x2="4" y2="9" />
+              <line x1="1" y1="14" x2="4" y2="14" />
+            </svg>
+            <span>AI Diag</span>
+          </button>
+
           <button class="header-btn" id="btn-top-options" title="Browser Options">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2">
               <circle cx="12" cy="12" r="1.5" />
@@ -2419,6 +2435,17 @@
                 </svg>
                 <span>Open Gemini in Tesseract</span>
               </div>
+            </div>
+
+            <div class="opts-item" onclick="openLocalAiDiagnostics()">
+              <div class="opts-left">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <rect x="9" y="9" width="6" height="6" />
+                </svg>
+                <span>Local AI Diagnostics</span>
+              </div>
+              <span class="opts-shortcut" style="color:#00f0ff;">Dev</span>
             </div>
 
             <div class="opts-item" onclick="smartSearchAndExecute('https://lens.google.com', false)">
@@ -3078,6 +3105,78 @@
         placeholder="e.g. Summarize current tab, research laptop specs, or optimize browser..." />
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
         <button class="ask-tesseract-btn" id="btn-submit-modal-ai">Execute Task ↵</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEVELOPMENT-ONLY LOCAL AI DIAGNOSTICS MODAL -->
+  <div class="modal-overlay" id="local-ai-diag-modal">
+    <div class="modal-box" style="max-width: 680px; max-height: 88vh; overflow-y: auto;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:700; color:#00f0ff;">⚡ Local AI Diagnostics</span>
+          <span style="font-size:10px; background:rgba(0,240,255,0.15); color:#00f0ff; padding:2px 6px; border-radius:4px; font-weight:600;">DEV ONLY</span>
+        </div>
+        <button class="header-btn" id="btn-close-diag-modal">✕</button>
+      </div>
+
+      <!-- Health Overview Bar -->
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+          <span style="font-size:12px; font-weight:600; color:#fff;">Ollama & Local Gemma Status</span>
+          <button id="btn-run-diag-health" class="ask-tesseract-btn" style="padding: 4px 10px; font-size: 11px;">Run Health Check</button>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
+          <div>
+            <span style="color:#94a3b8;">Connection Status:</span>
+            <span id="diag-conn-status" style="font-weight:600; color:#cbd5e1; margin-left:4px;">Not checked</span>
+          </div>
+          <div>
+            <span style="color:#94a3b8;">Selected Model:</span>
+            <span id="diag-model-name" style="font-weight:600; color:#cbd5e1; margin-left:4px;">-</span>
+          </div>
+          <div>
+            <span style="color:#94a3b8;">Model Availability:</span>
+            <span id="diag-model-avail" style="font-weight:600; color:#cbd5e1; margin-left:4px;">-</span>
+          </div>
+          <div>
+            <span style="color:#94a3b8;">Latency:</span>
+            <span id="diag-latency" style="font-weight:600; color:#cbd5e1; margin-left:4px;">-</span>
+          </div>
+        </div>
+        <div id="diag-safe-error" style="display:none; margin-top:8px; padding:8px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); border-radius:6px; color:#fca5a5; font-size:11px;"></div>
+      </div>
+
+      <!-- Section: Test Prompt & Response -->
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+          <span style="font-size:12px; font-weight:600; color:#fff;">generateAiResponse Test</span>
+          <button id="btn-test-gen-ai" class="ask-tesseract-btn" style="padding: 4px 10px; font-size: 11px;">Send Test Prompt</button>
+        </div>
+        <div style="margin-bottom: 6px;">
+          <label style="font-size:11px; color:#94a3b8;">Test Prompt:</label>
+          <input type="text" id="diag-test-prompt" class="modal-input" style="margin-top:4px; font-size:12px;" value="Reply with exactly: Tesseract local Gemma is working." />
+        </div>
+        <div>
+          <label style="font-size:11px; color:#94a3b8;">Response Output:</label>
+          <pre id="diag-gen-response" style="background:#090d16; border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px; font-size:11px; color:#38bdf8; max-height:120px; overflow-y:auto; white-space:pre-wrap; margin-top:4px;">Click "Send Test Prompt" to test.</pre>
+        </div>
+      </div>
+
+      <!-- Section: Intent Classification Test -->
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+          <span style="font-size:12px; font-weight:600; color:#fff;">classifyIntent Test</span>
+          <button id="btn-test-classify" class="ask-tesseract-btn" style="padding: 4px 10px; font-size: 11px;">Classify Intent</button>
+        </div>
+        <div style="margin-bottom: 6px;">
+          <label style="font-size:11px; color:#94a3b8;">Input Text:</label>
+          <input type="text" id="diag-intent-input" class="modal-input" style="margin-top:4px; font-size:12px;" value="Search for quantum computing advancements" />
+        </div>
+        <div>
+          <label style="font-size:11px; color:#94a3b8;">Classification Result:</label>
+          <pre id="diag-intent-response" style="background:#090d16; border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px; font-size:11px; color:#34d399; max-height:120px; overflow-y:auto; white-space:pre-wrap; margin-top:4px;">Click "Classify Intent" to test.</pre>
+        </div>
       </div>
     </div>
   </div>
@@ -3828,7 +3927,7 @@
     }
 
     // Smart Search & Navigation Engine
-    function smartSearchAndExecute(rawQuery, triggerAi = true, isIncognito = false) {
+    function smartSearchAndExecute(rawQuery, triggerAi = false, isIncognito = false) {
       if (!rawQuery) return;
       const query = rawQuery.trim();
       if (!query) return;
@@ -4102,11 +4201,12 @@
             };
           }
           if (lower.includes('another') || lower.includes('next') || lower.includes('different') || lower.includes('shorter')) {
+            const fallbackQuery = last.rawGoal || 'popular video';
             return {
               type: 'YOUTUBE_RECOMMENDATION',
               category: (last.category || 'Curated video') + ' (Alternative)',
-              spokenIntro: "Understood, finding a different video for you on YouTube.",
-              targetUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent((last.category || 'engaging video') + ' short documentary'),
+              spokenIntro: "Finding another video for you on YouTube.",
+              targetUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(fallbackQuery),
               autoPlayMedia: true
             };
           }
@@ -4198,51 +4298,7 @@
         const clean = rawGoal.trim();
         const lower = clean.toLowerCase();
 
-        // 2. Play / Watch / Listen Intent (YouTube Media Playback)
-        // Matches: "play Taylor Swift", "watch Interstellar trailer", "put on lofi beats", "listen to podcast", "play a video as I eat"
-        const isPlayIntent = /^(?:can you|please|i want to|just)?\s*(?:play|watch|listen to|put on|stream|show video|find video)?\b/i.test(clean)
-          || lower.includes('play song') || lower.includes('play music') || lower.includes('play video')
-          || lower.includes('as i eat') || lower.includes('while eating') || lower.includes('having lunch') || lower.includes('having dinner');
-
-        if (isPlayIntent) {
-          let mediaQuery = clean
-            .replace(/^(?:can you|please|i want to|just)?\s*(?:play|watch|listen to|put on|stream|show video|find video)?\s*(?:a video|something|a movie|some music|song|songs|music)?\s*(?:as|while)?\s*(?:i am|i'm|im)?\s*(?:eating|having|eat)?\s*(?:food|lunch|dinner|breakfast|meal)?/gi, '')
-            .replace(/^(?:on|from|in)\s+youtube/gi, '')
-            .trim();
-
-          if (!mediaQuery || mediaQuery.length < 2) {
-            mediaQuery = lower.includes('eat') || lower.includes('food') ? 'entertaining documentary' : 'top trending music hits';
-          }
-
-          return {
-            rawGoal: clean,
-            type: 'YOUTUBE_RECOMMENDATION',
-            category: 'Music & Video Playback',
-            spokenIntro: `Playing "${mediaQuery}" on YouTube.`,
-            targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(mediaQuery)}`,
-            autoPlayMedia: true
-          };
-        }
-
-        // 3. Social / DM Checking Intent
-        if (lower.includes('instagram') || lower.includes('insta')) {
-          const nameMatch = clean.match(/(?:check if|did|message from|texted by|from)\s+([a-zA-Z0-9_-]+)/i);
-          const contactName = nameMatch ? nameMatch[1] : '';
-          return {
-            rawGoal: clean,
-            type: 'SOCIAL_DM_CHECK',
-            platform: 'Instagram',
-            contactName: contactName,
-            spokenIntro: contactName 
-              ? `Navigating to Instagram to check direct messages from ${contactName}...` 
-              : `Navigating to Instagram Direct Messages...`,
-            targetUrl: 'https://www.instagram.com/direct/inbox/',
-            autoExtractDM: true
-          };
-        }
-
-        // 4. Open / Direct Site Navigation Intent
-        // Matches: "open reddit", "go to github", "visit amazon", "take me to chatgpt", "launch youtube", "reddit.com"
+        // 2. Open / Direct Site or URL Navigation Intent
         const siteMap = {
           youtube: 'https://www.youtube.com',
           yt: 'https://www.youtube.com',
@@ -4267,7 +4323,18 @@
           instagram: 'https://www.instagram.com',
         };
 
-        const openMatch = lower.match(/^(?:can you|please)?\s*(?:open|go to|visit|launch|navigate to|take me to|head to)\s+([a-zA-Z0-9.-]+)/i);
+        // Check if rawGoal is already a URL or domain (e.g. "https://...", "github.com", "news.ycombinator.com")
+        if (/^https?:\/\//i.test(clean) || /^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/.*)?$/i.test(clean)) {
+          const destUrl = clean.startsWith('http') ? clean : `https://${clean}`;
+          return {
+            rawGoal: clean,
+            type: 'DIRECT_NAVIGATION',
+            spokenIntro: `Navigating to ${clean}.`,
+            targetUrl: destUrl
+          };
+        }
+
+        const openMatch = lower.match(/^(?:can you\s+|please\s+)?(?:open|go to|visit|launch|navigate to|take me to|head to)\s+([a-zA-Z0-9.-]+)/i);
         if (openMatch) {
           const site = openMatch[1].toLowerCase().replace(/\.com|\.org|\.net|\.io/g, '');
           let destUrl = siteMap[site];
@@ -4277,7 +4344,7 @@
           return {
             rawGoal: clean,
             type: 'DIRECT_NAVIGATION',
-            spokenIntro: `Opening ${site}.`,
+            spokenIntro: `Opening ${openMatch[1]}.`,
             targetUrl: destUrl
           };
         }
@@ -4294,19 +4361,92 @@
           }
         }
 
-        // 5. Search / Question Intent
-        // Matches: "search for quantum computing", "find best laptops", "what is the capital of France", "how to code in Rust"
-        let searchQuery = clean
-          .replace(/^(?:can you|please)?\s*(?:search for|search|google|find|look up|tell me about|show me|where is|what is|who is|how to)\s+/i, '')
-          .trim();
+        // 3. Direct DOM media controls without reload (e.g. "pause", "resume", "stop video")
+        if (/^(?:pause|stop video|pause video|pause it)$/i.test(lower)) {
+          return {
+            rawGoal: clean,
+            type: 'DOM_MEDIA_CONTROL',
+            action: 'pause',
+            spokenIntro: "Pausing playback.",
+            execute: async () => {
+              const wv = document.getElementById('webview');
+              if (wv) wv.executeJavaScript(`(() => { const v = document.querySelector('video'); if (v) v.pause(); return 'Paused'; })()`);
+            }
+          };
+        }
+        if (/^(?:resume|unpause|resume video|play again)$/i.test(lower)) {
+          return {
+            rawGoal: clean,
+            type: 'DOM_MEDIA_CONTROL',
+            action: 'play',
+            spokenIntro: "Resuming playback.",
+            execute: async () => {
+              const wv = document.getElementById('webview');
+              if (wv) wv.executeJavaScript(`(() => { const v = document.querySelector('video'); if (v) v.play(); return 'Playing'; })()`);
+            }
+          };
+        }
 
-        if (!searchQuery) searchQuery = clean;
+        // 4. Play / Watch / Listen Media Intent (ONLY when explicitly requested)
+        // Matches: "play Taylor Swift", "watch Interstellar trailer", "put on lofi beats", "listen to podcast"
+        const playRegex = /^(?:can you\s+|please\s+|i want to\s+|just\s+)?(?:play|watch|listen to|put on|stream|show video of)\s+(.+)$/i;
+        const playMatch = clean.match(playRegex);
+        const hasExplicitPlayPhrase = lower.startsWith('play ') || lower.startsWith('watch ') || lower.startsWith('listen to ') || lower.includes('play song') || lower.includes('play music') || lower.includes('play video');
 
+        if (playMatch || hasExplicitPlayPhrase) {
+          let mediaQuery = playMatch ? playMatch[1] : clean.replace(/^(?:can you\s+|please\s+)?play\s+(?:song|music|video)?\s*/i, '');
+          mediaQuery = mediaQuery
+            .replace(/\b(?:on|from|in)\s+youtube\b/gi, '')
+            .replace(/^(?:the\s+)?(?:song|songs|video|videos|music|track)\s+(?:of|for|by|called)?\s*/i, '')
+            .trim();
+
+          if (mediaQuery && mediaQuery.length >= 2) {
+            return {
+              rawGoal: clean,
+              type: 'YOUTUBE_RECOMMENDATION',
+              category: 'Media Playback',
+              spokenIntro: `Playing "${mediaQuery}" on YouTube.`,
+              targetUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(mediaQuery)}`,
+              autoPlayMedia: true
+            };
+          }
+        }
+
+        // 5. Social / DM Checking Intent
+        if (lower.includes('instagram') || lower.includes('insta')) {
+          const nameMatch = clean.match(/(?:check if|did|message from|texted by|from)\s+([a-zA-Z0-9_-]+)/i);
+          const contactName = nameMatch ? nameMatch[1] : '';
+          return {
+            rawGoal: clean,
+            type: 'SOCIAL_DM_CHECK',
+            platform: 'Instagram',
+            contactName: contactName,
+            spokenIntro: contactName 
+              ? `Navigating to Instagram to check direct messages from ${contactName}...` 
+              : `Navigating to Instagram Direct Messages...`,
+            targetUrl: 'https://www.instagram.com/direct/inbox/',
+            autoExtractDM: true
+          };
+        }
+
+        // 6. Explicit Search Request ONLY (e.g. "search Google for...", "search the web for...")
+        const explicitSearchMatch = lower.match(/^(?:can you\s+|please\s+)?(?:search google for|search the web for|search online for|search for|google)\s+(.+)$/i);
+        if (explicitSearchMatch) {
+          const searchQuery = explicitSearchMatch[1].trim();
+          return {
+            rawGoal: clean,
+            type: 'SEARCH_TASK',
+            spokenIntro: `Searching Google for "${searchQuery}".`,
+            targetUrl: 'https://www.google.com/search?q=' + encodeURIComponent(searchQuery)
+          };
+        }
+
+        // 7. Conversational / General QA or Task (No Google Navigation)
         return {
           rawGoal: clean,
-          type: 'SEARCH_TASK',
-          spokenIntro: `Searching for "${searchQuery}".`,
-          targetUrl: 'https://www.google.com/search?q=' + encodeURIComponent(searchQuery)
+          type: 'GENERAL_AI_TASK',
+          spokenIntro: 'Processing with Tesseract AI...',
+          targetUrl: ''
         };
       }
     };
@@ -4317,29 +4457,10 @@
     async function executeRealAgentTask(promptText, openSidebarNow = false) {
       if (!promptText) return;
 
-      // 1. Analyze user intent & contextual memory
+      // Analyze contextual memory / shortcuts first
       const resolution = UserPreferenceEngine.resolveContextualGoal(promptText);
 
-      // 2. Announce action via Text-to-Speech
-      speakTextAloud(resolution.spokenIntro);
-
-      // 3. Update live plan card UI
-      const planCard = document.getElementById('tesseract-active-plan-card');
-      if (planCard) {
-        planCard.innerHTML = `
-          <div class="ai-card-header" style="color: #10b981;">
-            <span class="status-pulse" style="background:#10b981;"></span>
-            <span>${resolution.type === 'DOM_MEDIA_CONTROL' ? 'Executing Follow-Up Control' : 'Task Executing Autonomously'}</span>
-          </div>
-          <p style="font-size:11px; color:#ffffff; font-weight:600; margin-top:2px;">Goal: "${promptText}"</p>
-          <div class="ai-log-step complete">Step 1: Context Resolved (${resolution.category || resolution.type})</div>
-          <div class="ai-log-step active" id="plan-step-2">Step 2: ${resolution.type === 'DOM_MEDIA_CONTROL' ? 'Applying browser media action' : 'Navigating to ' + resolution.targetUrl}</div>
-          <div class="ai-log-step" id="plan-step-3">Step 3: Performing autonomous web action</div>
-          <div class="ai-log-step" id="plan-step-4">Step 4: Policy & Security verification</div>
-        `;
-      }
-
-      // Open sidebar so user sees the plan executing
+      // Open sidebar so user sees the live response / plan executing
       if (openSidebarNow) {
         const tesseractSubtabBtn = document.querySelector('.sidebar-subtab-btn[data-subtab="tesseract"]');
         if (tesseractSubtabBtn) tesseractSubtabBtn.click();
@@ -4348,61 +4469,165 @@
 
       // Handle direct DOM control without page reload (e.g. "Pause it", "Resume")
       if (resolution.type === 'DOM_MEDIA_CONTROL' && typeof resolution.execute === 'function') {
+        speakTextAloud(resolution.spokenIntro);
         await resolution.execute();
-        const step2El = document.getElementById('plan-step-2');
-        if (step2El) { step2El.className = 'ai-log-step complete'; }
-        const step3El = document.getElementById('plan-step-3');
-        if (step3El) { step3El.className = 'ai-log-step complete'; }
-        const step4El = document.getElementById('plan-step-4');
-        if (step4El) { step4El.className = 'ai-log-step complete'; }
         ConversationMemory.recordTaskResolution(resolution);
         saveTaskToHistory(promptText, 4, 'Completed');
         return;
       }
 
-      // 4. Autonomous Navigation
-      await TesseractBrowserAutomator.navigate(resolution.targetUrl);
-      const step2El = document.getElementById('plan-step-2');
-      if (step2El) { step2El.className = 'ai-log-step complete'; }
-      const step3El = document.getElementById('plan-step-3');
-      if (step3El) { step3El.className = 'ai-log-step active'; }
-
-      // 5. Autonomous Action Execution
-      let actionResult = 'Executed successfully';
-      if (resolution.autoPlayMedia) {
-        // Wait 2 seconds for YouTube results to settle, then click top video
-        await new Promise(r => setTimeout(r, 2000));
-        actionResult = await TesseractBrowserAutomator.playFirstMedia();
-        speakTextAloud("Video started. Enjoy your meal!");
-      } else if (resolution.autoExtractDM) {
-        await new Promise(r => setTimeout(r, 2500));
-        actionResult = await TesseractBrowserAutomator.extractDirectMessage(resolution.contactName);
-        speakTextAloud(actionResult.includes('No active message') ? `Checked Instagram. ${actionResult}` : `Found message from ${resolution.contactName}: ${actionResult}`);
-      } else if (resolution.autoReplyDM) {
-        await new Promise(r => setTimeout(r, 2000));
-        speakTextAloud(`Drafted reply: "${resolution.replyText}". Ready to send.`);
+      // 1. Initial live card UI
+      const planCard = document.getElementById('tesseract-active-plan-card');
+      if (planCard) {
+        planCard.innerHTML = `
+          <div class="ai-card-header" style="color: #00f0ff;">
+            <span class="status-pulse" style="background:#00f0ff;"></span>
+            <span>Evaluating with Local Gemma 3...</span>
+          </div>
+          <p style="font-size:11px; color:#ffffff; font-weight:600; margin-top:2px;">Goal: "${promptText}"</p>
+          <div class="ai-log-step active" id="plan-step-1">Step 1: Classifying intent with local Gemma</div>
+          <div class="ai-log-step" id="plan-step-2">Step 2: Processing request</div>
+          <div class="ai-log-step" id="plan-step-3">Step 3: Verification & Response</div>
+        `;
       }
 
-      if (step3El) { step3El.className = 'ai-log-step complete'; }
-      const step4El = document.getElementById('plan-step-4');
-      if (step4El) { step4El.className = 'ai-log-step complete'; }
+      const activeTab = openTabs.find(t => t.id === activeTabId);
+      const pageContext = {
+        url: activeTab?.url || '',
+        title: activeTab?.title || '',
+      };
 
-      // Record in memory for conversational continuity
-      ConversationMemory.recordTaskResolution(resolution);
-
-      // 6. Record task in Orchestrator & Task State DB
+      // 2. Authoritative Intent-Based Execution via Native IPC
       if (window.tesseractNative && window.tesseractNative.executeTask) {
         try {
-          await window.tesseractNative.executeTask('abdul-owner', promptText, { targetUrl: resolution.targetUrl });
+          const res = await window.tesseractNative.executeTask('abdul-owner', promptText, pageContext);
+
+          if (res && res.success) {
+            const intent = res.intent || 'general_qa';
+            const route = res.route || 'local_response';
+            const step1El = document.getElementById('plan-step-1');
+            if (step1El) step1El.className = 'ai-log-step complete';
+
+            // Route 1: Local Response (general_qa, page explanation/summary) - STRICTLY NO GOOGLE
+            if (route === 'local_response') {
+              const answerText = res.response?.answer || res.actionSummary || 'Answer generated.';
+              if (planCard) {
+                planCard.innerHTML = `
+                  <div class="ai-card-header" style="color: #10b981;">
+                    <span class="status-pulse" style="background:#10b981;"></span>
+                    <span>Local AI Response (${intent})</span>
+                  </div>
+                  <p style="font-size:11px; color:#ffffff; font-weight:600; margin-top:2px;">Goal: "${promptText}"</p>
+                  <div class="ai-log-step complete">Step 1: Intent Classified (${intent})</div>
+                  <div class="ai-log-step complete">Step 2: Local Gemma 3 Inference (No Web Search)</div>
+                  <div style="margin-top:8px; padding:10px; background:rgba(0,240,255,0.06); border:1px solid rgba(0,240,255,0.2); border-radius:6px; color:#f1f5f9; font-size:12px; line-height:1.5; white-space:pre-wrap;">${answerText}</div>
+                `;
+              }
+              speakTextAloud(answerText);
+              ConversationMemory.recordTaskResolution({ rawGoal: promptText, type: 'LOCAL_QA' });
+              saveTaskToHistory(promptText, 3, 'Completed (Local AI)');
+
+              if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
+                try { await window.tesseractNative.refocusMainWindow(); } catch (_) {}
+              }
+              return;
+            }
+
+            // Route 2: Browser Navigation
+            if (route === 'browser_navigation') {
+              let targetUrl = resolution.targetUrl;
+              const lowerGoal = promptText.toLowerCase();
+              if (!targetUrl) {
+                if (lowerGoal.includes('google')) {
+                  const q = promptText.replace(/^(?:can you\s+|please\s+)?(?:search google for|search google|search for|google)\s+/i, '').trim();
+                  targetUrl = 'https://www.google.com/search?q=' + encodeURIComponent(q);
+                } else if (lowerGoal.includes('youtube')) {
+                  targetUrl = 'https://www.youtube.com';
+                } else {
+                  targetUrl = 'https://www.google.com';
+                }
+              }
+              const step2El = document.getElementById('plan-step-2');
+              if (step2El) {
+                step2El.className = 'ai-log-step active';
+                step2El.textContent = `Step 2: Navigating to ${targetUrl}`;
+              }
+              await TesseractBrowserAutomator.navigate(targetUrl);
+              if (step2El) step2El.className = 'ai-log-step complete';
+              const step3El = document.getElementById('plan-step-3');
+              if (step3El) step3El.className = 'ai-log-step complete';
+
+              speakTextAloud(`Navigating to ${targetUrl}.`);
+              saveTaskToHistory(promptText, 3, 'Navigated');
+
+              if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
+                try { await window.tesseractNative.refocusMainWindow(); } catch (_) {}
+              }
+              return;
+            }
+
+            // Route 3: Research Agent (Multi-Source / Comparison)
+            if (route === 'research_agent') {
+              const answerText = res.response?.answer || res.actionSummary || 'Research complete.';
+              if (planCard) {
+                planCard.innerHTML = `
+                  <div class="ai-card-header" style="color: #10b981;">
+                    <span class="status-pulse" style="background:#10b981;"></span>
+                    <span>Research Agent Completed</span>
+                  </div>
+                  <p style="font-size:11px; color:#ffffff; font-weight:600; margin-top:2px;">Goal: "${promptText}"</p>
+                  <div class="ai-log-step complete">Step 1: Intent Classified (research_compare)</div>
+                  <div class="ai-log-step complete">Step 2: Multi-Source Web Research & Read-Only Tools</div>
+                  <div style="margin-top:8px; padding:10px; background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:6px; color:#f1f5f9; font-size:12px; line-height:1.5; white-space:pre-wrap;">${answerText}</div>
+                `;
+              }
+              speakTextAloud(answerText);
+              saveTaskToHistory(promptText, 3, 'Completed (Research)');
+
+              if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
+                try { await window.tesseractNative.refocusMainWindow(); } catch (_) {}
+              }
+              return;
+            }
+
+            // Route 4: Communication Agent (Requires Approval)
+            if (route === 'communication_agent') {
+              if (planCard) {
+                planCard.innerHTML = `
+                  <div class="ai-card-header" style="color: #f59e0b;">
+                    <span class="status-pulse" style="background:#f59e0b;"></span>
+                    <span>Approval Required (Security Policy)</span>
+                  </div>
+                  <p style="font-size:11px; color:#ffffff; font-weight:600; margin-top:2px;">Goal: "${promptText}"</p>
+                  <div class="ai-log-step complete">Step 1: Intent Classified (communication_task)</div>
+                  <div class="ai-log-step complete" style="color:#f59e0b;">Step 2: Deterministic Policy Engine Evaluation (HIGH RISK)</div>
+                  <div style="margin-top:8px; padding:10px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.3); border-radius:6px; color:#fde68a; font-size:12px; line-height:1.5;">
+                    ⚠️ <strong>Permission Required:</strong> ${res.approvalReason || 'Sending messages or emails requires explicit user confirmation.'}
+                  </div>
+                `;
+              }
+              speakTextAloud("This action requires your confirmation before sending.");
+              saveTaskToHistory(promptText, 3, 'Awaiting Approval');
+
+              if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
+                try { await window.tesseractNative.refocusMainWindow(); } catch (_) {}
+              }
+              return;
+            }
+          }
         } catch (e) {
           console.log('IPC execution error:', e);
         }
       }
 
-      // 7. Save to local Task History & Trello UI
-      saveTaskToHistory(promptText, 4, 'Completed');
+      // Fallback for navigation if IPC not available
+      if (resolution.targetUrl) {
+        speakTextAloud(resolution.spokenIntro);
+        await TesseractBrowserAutomator.navigate(resolution.targetUrl);
+        saveTaskToHistory(promptText, 4, 'Completed');
+      }
 
-      // 8. CRITICAL: Refocus main Electron window so [T] hold works again
+      // CRITICAL: Refocus main Electron window so [T] hold works again
       if (window.tesseractNative && window.tesseractNative.refocusMainWindow) {
         try { await window.tesseractNative.refocusMainWindow(); } catch (_) {}
       }
@@ -5298,14 +5523,14 @@
       urlInput?.addEventListener('focus', () => { urlInput.select(); });
 
       urlInput?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') smartSearchAndExecute(urlInput.value, true);
+        if (e.key === 'Enter') smartSearchAndExecute(urlInput.value, false);
         if (e.key === 'Escape') urlInput.blur();
       });
 
       const heroAiInput = document.getElementById('hero-ai-input');
       heroAiInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-          smartSearchAndExecute(heroAiInput.value, true);
+          smartSearchAndExecute(heroAiInput.value, false);
           heroAiInput.value = '';
         }
       });
@@ -5422,11 +5647,140 @@
             const val = document.getElementById('modal-ai-input')?.value.trim();
             if (val) {
               closeAiModal();
-              smartSearchAndExecute(val, true);
+              executeRealAgentTask(val, true);
             }
           }
         }
       });
+
+      // ── LOCAL AI DIAGNOSTICS (DEV ONLY) ──
+      window.openLocalAiDiagnostics = function() {
+        const modal = document.getElementById('local-ai-diag-modal');
+        if (modal) {
+          modal.classList.add('active');
+          runLocalAiHealthDiag();
+        }
+      };
+
+      window.closeLocalAiDiagnostics = function() {
+        const modal = document.getElementById('local-ai-diag-modal');
+        if (modal) modal.classList.remove('active');
+      };
+
+      async function runLocalAiHealthDiag() {
+        const api = window.tesseractNative || window.tesseract;
+        const connEl = document.getElementById('diag-conn-status');
+        const modelEl = document.getElementById('diag-model-name');
+        const availEl = document.getElementById('diag-model-avail');
+        const latencyEl = document.getElementById('diag-latency');
+        const errEl = document.getElementById('diag-safe-error');
+
+        if (!api || !api.checkGemmaHealth) {
+          if (connEl) connEl.innerHTML = '<span style="color:#ef4444;">Bridge Unavailable</span>';
+          if (errEl) {
+            errEl.style.display = 'block';
+            errEl.textContent = 'Preload bridge is not accessible in this context.';
+          }
+          return;
+        }
+
+        if (connEl) connEl.innerHTML = '<span style="color:#f59e0b;">Checking...</span>';
+        if (errEl) errEl.style.display = 'none';
+
+        try {
+          const start = Date.now();
+          const health = await api.checkGemmaHealth();
+          const latency = Date.now() - start;
+
+          if (latencyEl) latencyEl.textContent = `${health.latencyMs ?? latency}ms`;
+          if (modelEl) modelEl.textContent = health.modelName || 'Not configured';
+
+          if (health.status === 'AVAILABLE') {
+            if (connEl) connEl.innerHTML = '<span style="color:#10b981;">● Connected (Ollama)</span>';
+            if (availEl) availEl.innerHTML = '<span style="color:#10b981;">Ready (Installed)</span>';
+          } else if (health.status === 'MODEL_MISSING') {
+            if (connEl) connEl.innerHTML = '<span style="color:#10b981;">● Connected (Ollama)</span>';
+            if (availEl) availEl.innerHTML = '<span style="color:#ef4444;">Model Missing</span>';
+            if (errEl) {
+              errEl.style.display = 'block';
+              errEl.textContent = 'Ollama is running, but the Gemma model is missing. Run: ollama pull gemma3:4b';
+            }
+          } else {
+            if (connEl) connEl.innerHTML = '<span style="color:#ef4444;">● Offline / Unavailable</span>';
+            if (availEl) availEl.innerHTML = '<span style="color:#64748b;">Unavailable</span>';
+            if (errEl) {
+              errEl.style.display = 'block';
+              errEl.textContent = 'Ollama local endpoint is unreachable. Make sure Ollama is installed and running on localhost:11434.';
+            }
+          }
+        } catch (e) {
+          if (connEl) connEl.innerHTML = '<span style="color:#ef4444;">Error</span>';
+          if (errEl) {
+            errEl.style.display = 'block';
+            errEl.textContent = 'Health check failed: ' + (e && e.message ? e.message : 'Unknown error');
+          }
+        }
+      }
+
+      async function runLocalAiGenerateDiag() {
+        const api = window.tesseractNative || window.tesseract;
+        const promptInput = document.getElementById('diag-test-prompt');
+        const outEl = document.getElementById('diag-gen-response');
+        if (!api || !api.generateAiResponse) {
+          if (outEl) outEl.textContent = 'Error: generateAiResponse is not available in preload.';
+          return;
+        }
+        const prompt = promptInput ? promptInput.value.trim() : '';
+        if (!prompt) return;
+
+        if (outEl) outEl.textContent = 'Generating response from local Gemma...';
+
+        try {
+          const res = await api.generateAiResponse(prompt);
+          if (outEl) {
+            if (res && res.success && res.response) {
+              outEl.textContent = typeof res.response === 'object' ? JSON.stringify(res.response, null, 2) : res.response;
+            } else {
+              outEl.textContent = JSON.stringify(res, null, 2);
+            }
+          }
+        } catch (err) {
+          if (outEl) outEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+        }
+      }
+
+      async function runLocalAiClassifyDiag() {
+        const api = window.tesseractNative || window.tesseract;
+        const textInput = document.getElementById('diag-intent-input');
+        const outEl = document.getElementById('diag-intent-response');
+        if (!api || !api.classifyIntent) {
+          if (outEl) outEl.textContent = 'Error: classifyIntent is not available in preload.';
+          return;
+        }
+        const text = textInput ? textInput.value.trim() : '';
+        if (!text) return;
+
+        if (outEl) outEl.textContent = 'Classifying intent with local Gemma...';
+
+        try {
+          const res = await api.classifyIntent(text);
+          if (outEl) {
+            if (res && res.success && res.classification) {
+              outEl.textContent = JSON.stringify(res.classification, null, 2);
+            } else {
+              outEl.textContent = JSON.stringify(res, null, 2);
+            }
+          }
+        } catch (err) {
+          if (outEl) outEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+        }
+      }
+
+      document.getElementById('btn-local-ai-diag')?.addEventListener('click', window.openLocalAiDiagnostics);
+      document.getElementById('btn-close-diag-modal')?.addEventListener('click', window.closeLocalAiDiagnostics);
+      document.getElementById('btn-run-diag-health')?.addEventListener('click', runLocalAiHealthDiag);
+      document.getElementById('btn-test-gen-ai')?.addEventListener('click', runLocalAiGenerateDiag);
+      document.getElementById('btn-test-classify')?.addEventListener('click', runLocalAiClassifyDiag);
 
       document.getElementById('btn-hero-add')?.addEventListener('click', () => openAiModal('Add resource to task'));
       document.getElementById('btn-quick-ask')?.addEventListener('click', () => openAiModal());
@@ -5437,7 +5791,7 @@
         const val = document.getElementById('modal-ai-input')?.value.trim();
         if (val) {
           closeAiModal();
-          smartSearchAndExecute(val, true);
+          executeRealAgentTask(val, true);
         }
       });
 
@@ -5611,3 +5965,4 @@
 </body>
 
 </html>
+

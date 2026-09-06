@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tesseract/core-types": "*",
-    "@tesseract/policy-engine": "*"
+    "@tesseract/policy-engine": "*",
+    "zod": "^3.24.2"
   }
 }

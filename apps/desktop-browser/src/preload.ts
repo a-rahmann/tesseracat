@@ -1,6 +1,6 @@
-import { ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
-(window as any).tesseractNative = {
+const tesseractApi = {
   executeTask: (profileId: string, goal: string, contextData?: any) =>
     ipcRenderer.invoke('execute-agent-task', { profileId, goal, contextData }),
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
@@ -24,5 +24,16 @@ import { ipcRenderer } from 'electron';
   transcribeAudio: (audioData: number[]) => ipcRenderer.invoke('transcribe-audio', audioData),
   refocusMainWindow: () => ipcRenderer.invoke('refocus-main-window'),
   setApiKey: (key: string) => ipcRenderer.invoke('set-api-key', key),
-  setLlmConfig: (config: any) => ipcRenderer.invoke('set-llm-config', config)
+  setLlmConfig: (config: any) => ipcRenderer.invoke('set-llm-config', config),
+  checkGemmaHealth: () => ipcRenderer.invoke('gemma-health-check'),
+  classifyIntent: (input: string, contextData?: any) => ipcRenderer.invoke('classify-intent', { input, contextData }),
+  generateAiResponse: (query: string, contextData?: any) => ipcRenderer.invoke('generate-ai-response', { query, contextData })
 };
+
+if (process.contextIsolated) {
+  contextBridge.exposeInMainWorld('tesseractNative', tesseractApi);
+  contextBridge.exposeInMainWorld('tesseract', tesseractApi);
+} else {
+  (window as any).tesseractNative = tesseractApi;
+  (window as any).tesseract = tesseractApi;
+}
