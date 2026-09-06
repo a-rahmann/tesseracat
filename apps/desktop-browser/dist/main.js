@@ -290,4 +290,17 @@ electron_1.ipcMain.handle('download-url-resource', async (_event, url) => {
         return { success: false, error: err.message };
     }
 });
+// Microphone permission helpers for macOS System Settings
+electron_1.ipcMain.handle('get-mic-status', async () => {
+    if (process.platform === 'darwin') {
+        return electron_1.systemPreferences.getMediaAccessStatus('microphone');
+    }
+    return 'granted';
+});
+electron_1.ipcMain.handle('open-mic-settings', async () => {
+    if (process.platform === 'darwin') {
+        electron_1.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+    }
+    return true;
+});
 //# sourceMappingURL=main.js.map

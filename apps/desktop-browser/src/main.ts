@@ -307,3 +307,19 @@ ipcMain.handle('download-url-resource', async (_event, url: string) => {
     return { success: false, error: err.message };
   }
 });
+
+// Microphone permission helpers for macOS System Settings
+ipcMain.handle('get-mic-status', async () => {
+  if (process.platform === 'darwin') {
+    return systemPreferences.getMediaAccessStatus('microphone');
+  }
+  return 'granted';
+});
+
+ipcMain.handle('open-mic-settings', async () => {
+  if (process.platform === 'darwin') {
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+  }
+  return true;
+});
+
