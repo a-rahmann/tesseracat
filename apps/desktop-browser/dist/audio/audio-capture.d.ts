@@ -7,12 +7,14 @@ export declare class AudioCapture {
     private mediaStream;
     private audioContext;
     private workletNode;
+    private scriptProcessorNode;
     private sourceNode;
     private silentGain;
     private isCapturing;
     start(callbacks: AudioCaptureCallbacks): Promise<{
         sampleRate: number;
     }>;
+    private handlePcmData;
     private watchdogInterval;
     private startHealthWatchdog;
     resumeIfSuspended(): Promise<void>;

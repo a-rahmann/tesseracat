@@ -272,7 +272,12 @@ class VoiceManager {
             }
         }, 8500);
     }
-    startPushToTalk() {
+    async startPushToTalk() {
+        if (!this.isAudioPipelineReady) {
+            console.log('[VoiceManager] Audio pipeline not yet ready, initializing now for push-to-talk...');
+            await this.ensureAudioPipeline();
+        }
+        await this.capture.resumeIfSuspended();
         if (this.currentState === 'SPEAKING') {
             this.triggerInterruption();
         }
@@ -427,26 +432,49 @@ class VoiceManager {
         }
         this.resetToWakeListening();
     }
+    holdStartTimestamp = 0;
     setupGlobalShortcuts() {
         if (typeof window === 'undefined')
             return;
+        // Window interaction listener to immediately resume AudioContext on first gesture
+        const resumeAudio = () => {
+            if (this.capture) {
+                this.capture.resumeIfSuspended().catch(() => { });
+            }
+        };
+        window.addEventListener('click', resumeAudio, { passive: true });
+        window.addEventListener('keydown', resumeAudio, { passive: true });
         window.addEventListener('keydown', (e) => {
             const targetTag = e.target?.tagName?.toLowerCase();
-            if (targetTag === 'input' || targetTag === 'textarea')
+            if (targetTag === 'input' || targetTag === 'textarea' || e.target?.isContentEditable)
                 return;
-            if ((e.key === 't' || e.key === 'T') && !e.repeat && !e.metaKey && !e.ctrlKey) {
+            if ((e.key === 't' || e.key === 'T') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                this.holdStartTimestamp = Date.now();
                 if (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED') {
                     console.log('[Hotkey] T pressed -> stopping command recording & transcribing');
                     this.finishCommandRecording();
                 }
                 else {
                     console.log('[Hotkey] T pressed -> push-to-talk start');
-                    this.startPushToTalk();
+                    this.startPushToTalk().catch((err) => console.error('Push to talk error:', err));
                 }
             }
             else if (e.key === 'Escape') {
                 console.log('[Hotkey] Escape pressed -> interrupt');
                 this.triggerInterruption();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            const targetTag = e.target?.tagName?.toLowerCase();
+            if (targetTag === 'input' || targetTag === 'textarea' || e.target?.isContentEditable)
+                return;
+            if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey) {
+                const duration = Date.now() - this.holdStartTimestamp;
+                // If user held 'T' for >= 400ms (Push-to-talk hold behavior), release finishes recording!
+                if (duration >= 400 && (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED')) {
+                    console.log(`[Hotkey] T released after ${duration}ms hold -> stopping command recording`);
+                    this.finishCommandRecording();
+                }
             }
         });
     }

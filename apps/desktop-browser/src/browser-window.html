@@ -468,7 +468,7 @@
 
     /* Waveform Visualizer (The 4 dots next to mic) - Visible ONLY when wake word detected or recording/transcribing */
     .visualizer-container {
-      display: none;
+      display: flex;
       align-items: center;
       gap: 3.5px;
       height: 18px;
@@ -476,19 +476,20 @@
       margin-right: 2px;
       transition: opacity 160ms ease;
     }
-    .visualizer-container.visible {
-      display: flex;
-    }
     .vis-bar {
       width: 3.5px;
       height: 3.5px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.35);
-      transition: height 60ms ease, background 100ms ease, border-radius 100ms ease;
+      background: rgba(255, 255, 255, 0.25);
+      transition: height 60ms ease, background 100ms ease, border-radius 100ms ease, box-shadow 100ms ease;
+    }
+    .vis-bar.ambient {
+      background: rgba(56, 189, 248, 0.65) !important;
+      box-shadow: 0 0 4px rgba(56, 189, 248, 0.4) !important;
     }
     .vis-bar.active {
       background: #38bdf8 !important;
-      box-shadow: 0 0 8px rgba(56, 189, 248, 0.8) !important;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.85) !important;
     }
     @keyframes pulseTranscribing {
       0%, 100% { height: 4px; border-radius: 50%; }
@@ -516,15 +517,20 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      position: relative;
       transition: all 130ms ease;
     }
     .omnibar-voice-btn:hover {
       background: var(--surface-hover);
       color: var(--text);
     }
+    .omnibar-voice-btn.listening {
+      color: #38bdf8;
+    }
     .omnibar-voice-btn.recording {
-      color: var(--danger);
-      background: rgba(248, 113, 113, 0.15);
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.18);
+      box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
       animation: pulse-recording 1.2s infinite ease-in-out;
     }
     @keyframes pulse-recording {
@@ -1643,34 +1649,41 @@
         const rms = state.rms || 0;
 
         // 1. Omnibar Soundwave Bars (The 4 dots next to mic)
-        // Visualizer dots appear ONLY when "Hey Tesseract" wake word is detected or actively recording/transcribing
-        const visContainer = document.querySelector('.visualizer-container');
-        const shouldShowVis = state.status === 'wake-detected' || state.status === 'recording' || state.status === 'transcribing';
-        if (visContainer) {
-          if (shouldShowVis) visContainer.classList.add('visible');
-          else visContainer.classList.remove('visible');
-        }
-
         const bars = [
           document.getElementById('vb-1'),
           document.getElementById('vb-2'),
           document.getElementById('vb-3'),
           document.getElementById('vb-4')
         ];
-        if (bars[0] && shouldShowVis) {
+        if (bars[0]) {
           bars.forEach((b, idx) => {
             if (!b) return;
             if (state.status === 'transcribing') {
               b.classList.add('transcribing-pulse');
-              b.classList.remove('active');
+              b.classList.remove('active', 'ambient');
             } else if (state.status === 'recording' || state.status === 'wake-detected') {
-              b.classList.remove('transcribing-pulse');
-              const h = Math.min(16, Math.max(3.5, Math.round(rms * 450 * (1 + (idx % 2) * 0.4))));
+              b.classList.remove('transcribing-pulse', 'ambient');
+              const h = Math.min(16, Math.max(4, Math.round(rms * 500 * (1 + (idx % 2) * 0.4))));
               b.style.height = `${h}px`;
               b.style.borderRadius = h > 4 ? '1.5px' : '50%';
               b.classList.add('active');
-            } else {
+            } else if (state.status === 'listening-for-wake') {
               b.classList.remove('transcribing-pulse', 'active');
+              // Subtle ambient audio response during wake-listening so user sees mic is alive and hearing
+              if (rms > 0.006) {
+                const h = Math.min(9, Math.max(3.5, Math.round(rms * 220)));
+                b.style.height = `${h}px`;
+                b.style.borderRadius = h > 4 ? '1.5px' : '50%';
+                b.classList.add('ambient');
+              } else {
+                b.style.height = '3.5px';
+                b.style.borderRadius = '50%';
+                b.classList.remove('ambient');
+              }
+            } else {
+              b.style.height = '3.5px';
+              b.style.borderRadius = '50%';
+              b.classList.remove('transcribing-pulse', 'active', 'ambient');
             }
           });
         }
@@ -1685,8 +1698,16 @@
 
         const micBtn = document.getElementById('btn-mic');
         if (micBtn) {
-          if (state.status === 'recording') micBtn.classList.add('recording');
-          else micBtn.classList.remove('recording');
+          micBtn.classList.remove('recording', 'listening');
+          if (state.status === 'recording' || state.status === 'wake-detected') {
+            micBtn.classList.add('recording');
+            micBtn.title = "Recording... Click or press 'T' to finish";
+          } else if (state.status === 'listening-for-wake') {
+            micBtn.classList.add('listening');
+            micBtn.title = "Listening for 'Hey Tesseract' (Click or Hold 'T' to Speak)";
+          } else {
+            micBtn.title = "Click or Hold 'T' to Speak";
+          }
         }
 
         // 3. Omnibar Star Presence Glyph
@@ -2159,11 +2180,12 @@
     document.getElementById('btn-new-tab')?.addEventListener('click', () => createNewTab());
 
     // Mic Click Toggle
-    document.getElementById('btn-mic')?.addEventListener('click', () => {
-      if (voiceManager.getState().status === 'recording' || voiceManager.getState().status === 'wake-detected') {
-        voiceManager.stopRecordingAndTranscribe();
+    document.getElementById('btn-mic')?.addEventListener('click', async () => {
+      const curStatus = voiceManager ? voiceManager.getState().status : 'idle';
+      if (curStatus === 'recording' || curStatus === 'wake-detected') {
+        voiceManager?.stopRecordingAndTranscribe();
       } else {
-        voiceManager.startPushToTalk();
+        await voiceManager?.startPushToTalk();
       }
     });
 

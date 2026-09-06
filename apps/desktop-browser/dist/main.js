@@ -145,7 +145,34 @@ function createWindow() {
         });
     });
 }
-electron_1.app.whenReady().then(() => {
+electron_1.app.whenReady().then(async () => {
+    // Automatically grant microphone and media permissions in Electron renderer
+    electron_1.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+        if (permission === 'media') {
+            return callback(true);
+        }
+        callback(true);
+    });
+    electron_1.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+        if (permission === 'media') {
+            return true;
+        }
+        return true;
+    });
+    // Prompt for macOS microphone access explicitly if on Darwin
+    if (process.platform === 'darwin') {
+        try {
+            const micStatus = electron_1.systemPreferences.getMediaAccessStatus('microphone');
+            console.log(`[Main] macOS microphone access status: ${micStatus}`);
+            if (micStatus !== 'granted') {
+                const granted = await electron_1.systemPreferences.askForMediaAccess('microphone');
+                console.log(`[Main] macOS microphone permission prompt result: ${granted}`);
+            }
+        }
+        catch (err) {
+            console.warn('[Main] Error requesting macOS microphone access:', err);
+        }
+    }
     createWindow();
     ollama_sidecar_js_1.OllamaSidecar.getInstance().ensureRunning().catch(() => { });
     electron_1.app.on('activate', () => {

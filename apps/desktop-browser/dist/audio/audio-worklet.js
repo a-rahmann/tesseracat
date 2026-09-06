@@ -48,7 +48,13 @@ async function loadPcmWorklet(audioCtx) {
         await audioCtx.audioWorklet.addModule(workletUrl);
     }
     finally {
-        URL.revokeObjectURL(workletUrl);
+        // Delay revocation to ensure Chromium module compiler finishes reading
+        setTimeout(() => {
+            try {
+                URL.revokeObjectURL(workletUrl);
+            }
+            catch (_) { }
+        }, 10000);
     }
 }
 //# sourceMappingURL=audio-worklet.js.map

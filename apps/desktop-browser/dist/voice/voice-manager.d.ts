@@ -68,7 +68,7 @@ export declare class VoiceManager {
      */
     private processIncomingAudio;
     private handleWakeDetected;
-    startPushToTalk(): void;
+    startPushToTalk(): Promise<void>;
     stopRecordingAndTranscribe(): void;
     finishCommandRecording(): Promise<void>;
     setExecuting(): void;
@@ -77,6 +77,7 @@ export declare class VoiceManager {
     resetVoiceSession(): void;
     resetToWakeListening(): void;
     triggerInterruption(): void;
+    private holdStartTimestamp;
     private setupGlobalShortcuts;
 }
 //# sourceMappingURL=voice-manager.d.ts.map

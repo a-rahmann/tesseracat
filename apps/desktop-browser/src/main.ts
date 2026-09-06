@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell, dialog, Menu, MenuItem } from 'electron';
+import { app, BrowserWindow, ipcMain, session, shell, dialog, Menu, MenuItem, systemPreferences } from 'electron';
 import path from 'path';
 import { AgentOrchestrator } from '../../agent-runtime/dist/index.js';
 import { PolicyContext, TaskStep } from '../../../packages/core-types/dist/index.js';
@@ -157,7 +157,36 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Automatically grant microphone and media permissions in Electron renderer
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media') {
+      return callback(true);
+    }
+    callback(true);
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === 'media') {
+      return true;
+    }
+    return true;
+  });
+
+  // Prompt for macOS microphone access explicitly if on Darwin
+  if (process.platform === 'darwin') {
+    try {
+      const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+      console.log(`[Main] macOS microphone access status: ${micStatus}`);
+      if (micStatus !== 'granted') {
+        const granted = await systemPreferences.askForMediaAccess('microphone');
+        console.log(`[Main] macOS microphone permission prompt result: ${granted}`);
+      }
+    } catch (err) {
+      console.warn('[Main] Error requesting macOS microphone access:', err);
+    }
+  }
+
   createWindow();
   OllamaSidecar.getInstance().ensureRunning().catch(() => {});
 
