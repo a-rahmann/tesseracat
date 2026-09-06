@@ -108,6 +108,7 @@ function createWindow() {
             nodeIntegration: true,
             contextIsolation: false,
             webviewTag: true,
+            backgroundThrottling: false,
         },
     });
     mainWindow.loadFile(path_1.default.join(__dirname, '../src/browser-window.html'));
@@ -165,9 +166,28 @@ electron_1.app.whenReady().then(async () => {
         try {
             const micStatus = electron_1.systemPreferences.getMediaAccessStatus('microphone');
             console.log(`[Main] macOS microphone access status: ${micStatus}`);
-            if (micStatus !== 'granted') {
+            if (micStatus === 'not-determined') {
                 const granted = await electron_1.systemPreferences.askForMediaAccess('microphone');
                 console.log(`[Main] macOS microphone permission prompt result: ${granted}`);
+            }
+            else if (micStatus === 'denied') {
+                console.warn('[Main] macOS microphone permission is DENIED in System Settings.');
+                setTimeout(() => {
+                    if (mainWindow) {
+                        electron_1.dialog.showMessageBox(mainWindow, {
+                            type: 'warning',
+                            title: 'Microphone Access Disabled',
+                            message: 'Microphone access is currently disabled for Tesseract / Terminal in macOS System Settings.',
+                            detail: 'To use voice commands and push-to-talk, please enable Microphone access in System Settings > Privacy & Security > Microphone.',
+                            buttons: ['Open System Settings', 'Later'],
+                            defaultId: 0,
+                        }).then((res) => {
+                            if (res.response === 0) {
+                                electron_1.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+                            }
+                        });
+                    }
+                }, 1200);
             }
         }
         catch (err) {

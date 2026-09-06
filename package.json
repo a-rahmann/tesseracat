@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p apps/desktop-browser",
     "build:browser": "tsc -p apps/desktop-browser",
-    "start": "electron apps/desktop-browser",
+    "start": "npm run build:browser && electron apps/desktop-browser",
     "test": "node --test"
   },
   "devDependencies": {

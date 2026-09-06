@@ -113,6 +113,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       webviewTag: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -179,9 +180,27 @@ app.whenReady().then(async () => {
     try {
       const micStatus = systemPreferences.getMediaAccessStatus('microphone');
       console.log(`[Main] macOS microphone access status: ${micStatus}`);
-      if (micStatus !== 'granted') {
+      if (micStatus === 'not-determined') {
         const granted = await systemPreferences.askForMediaAccess('microphone');
         console.log(`[Main] macOS microphone permission prompt result: ${granted}`);
+      } else if (micStatus === 'denied') {
+        console.warn('[Main] macOS microphone permission is DENIED in System Settings.');
+        setTimeout(() => {
+          if (mainWindow) {
+            dialog.showMessageBox(mainWindow, {
+              type: 'warning',
+              title: 'Microphone Access Disabled',
+              message: 'Microphone access is currently disabled for Tesseract / Terminal in macOS System Settings.',
+              detail: 'To use voice commands and push-to-talk, please enable Microphone access in System Settings > Privacy & Security > Microphone.',
+              buttons: ['Open System Settings', 'Later'],
+              defaultId: 0,
+            }).then((res) => {
+              if (res.response === 0) {
+                shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+              }
+            });
+          }
+        }, 1200);
       }
     } catch (err) {
       console.warn('[Main] Error requesting macOS microphone access:', err);

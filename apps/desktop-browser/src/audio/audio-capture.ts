@@ -53,6 +53,11 @@ export class AudioCapture {
 
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
 
+      // Connect to AnalyserNode so Chromium CoreAudio HAL considers the microphone actively consumed
+      const analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      this.sourceNode.connect(analyser);
+
       // Attempt 1: AudioWorklet capture processor
       let workletActive = false;
       if (typeof this.audioContext.audioWorklet !== 'undefined') {
@@ -67,10 +72,8 @@ export class AudioCapture {
           };
 
           this.sourceNode.connect(this.workletNode);
-          this.silentGain = this.audioContext.createGain();
-          this.silentGain.gain.value = 0.0;
-          this.workletNode.connect(this.silentGain);
-          this.silentGain.connect(this.audioContext.destination);
+          // Connect worklet to destination (the processor zeroes all output channels so no sound plays)
+          this.workletNode.connect(this.audioContext.destination);
 
           workletActive = true;
           console.log('[Voice] AudioWorklet capture pipeline active');
@@ -79,10 +82,6 @@ export class AudioCapture {
           if (this.workletNode) {
             try { this.workletNode.disconnect(); } catch (_) {}
             this.workletNode = null;
-          }
-          if (this.silentGain) {
-            try { this.silentGain.disconnect(); } catch (_) {}
-            this.silentGain = null;
           }
         }
       }
@@ -101,13 +100,14 @@ export class AudioCapture {
           const clone = new Float32Array(inputData.length);
           clone.set(inputData);
           this.handlePcmData(clone, callbacks);
+
+          // Zero out the output buffer to prevent microphone feedback on speakers
+          const outputData = event.outputBuffer.getChannelData(0);
+          outputData.fill(0);
         };
 
         this.sourceNode.connect(scriptNode);
-        this.silentGain = this.audioContext.createGain();
-        this.silentGain.gain.value = 0.0;
-        scriptNode.connect(this.silentGain);
-        this.silentGain.connect(this.audioContext.destination);
+        scriptNode.connect(this.audioContext.destination);
         console.log('[Voice] ScriptProcessorNode capture fallback active');
       }
 
