@@ -15,8 +15,6 @@ export declare class AudioCapture {
         sampleRate: number;
     }>;
     private handlePcmData;
-    private watchdogInterval;
-    private startHealthWatchdog;
     resumeIfSuspended(): Promise<void>;
     stop(): Promise<void>;
     isActive(): boolean;

@@ -18,6 +18,7 @@ electron_1.app.commandLine.appendSwitch('ignore-gpu-blocklist');
 electron_1.app.commandLine.appendSwitch('enable-gpu-rasterization');
 electron_1.app.commandLine.appendSwitch('enable-zero-copy');
 electron_1.app.commandLine.appendSwitch('disable-software-rasterizer');
+electron_1.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 let mainWindow = null;
 const orchestrator = new index_js_1.AgentOrchestrator();
 // Pre-warm local Whisper model in background

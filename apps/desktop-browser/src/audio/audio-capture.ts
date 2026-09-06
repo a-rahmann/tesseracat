@@ -111,16 +111,7 @@ export class AudioCapture {
         console.log('[Voice] ScriptProcessorNode capture fallback active');
       }
 
-      // Handle OS/Chromium audio context suspension automatically
-      this.audioContext.onstatechange = () => {
-        if (this.audioContext && this.audioContext.state === 'suspended' && this.isCapturing) {
-          console.log('[Voice] AudioContext suspended by OS, auto-resuming...');
-          this.audioContext.resume().catch(() => {});
-        }
-      };
-
       this.isCapturing = true;
-      this.startHealthWatchdog();
       return { sampleRate: nativeSampleRate };
     } catch (err: any) {
       console.error('[Voice] AudioCapture start failed:', err);
@@ -140,20 +131,6 @@ export class AudioCapture {
     callbacks.onPcmChunk(data);
   }
 
-  private watchdogInterval: any = null;
-
-  private startHealthWatchdog(): void {
-    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
-    this.watchdogInterval = setInterval(() => {
-      if (this.isCapturing && this.audioContext) {
-        if (this.audioContext.state === 'suspended') {
-          console.log('[Voice Watchdog] AudioContext was suspended, waking back up...');
-          this.audioContext.resume().catch(() => {});
-        }
-      }
-    }, 1500);
-  }
-
   public async resumeIfSuspended(): Promise<void> {
     if (this.audioContext && this.audioContext.state === 'suspended') {
       console.log('[Voice] Explicitly resuming suspended AudioContext...');
@@ -163,10 +140,6 @@ export class AudioCapture {
 
   public async stop(): Promise<void> {
     this.isCapturing = false;
-    if (this.watchdogInterval) {
-      clearInterval(this.watchdogInterval);
-      this.watchdogInterval = null;
-    }
 
     if (this.workletNode) {
       try {
