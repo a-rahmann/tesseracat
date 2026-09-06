@@ -2149,12 +2149,12 @@
         osc.type = 'sine';
         osc.frequency.setValueAtTime(587.33, now); // D5
         osc.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+        gain.gain.setValueAtTime(0.035, now);
+        gain.gain.exponentialRampToValueAtTime(0.0005, now + 0.16);
         osc.connect(gain);
         gain.connect(sharedChimeCtx.destination);
         osc.start(now);
-        osc.stop(now + 0.22);
+        osc.stop(now + 0.16);
       } catch (_) {}
     }
 

@@ -67,32 +67,51 @@ async function transcribeAudioBuffer(audioFloat32) {
         console.log('[Whisper] Rejected: audio is ambient background noise (Max < 0.01, RMS < 0.002)');
         return '';
     }
-    // Trim leading and trailing silence to eliminate padding hallucinations and speed up inference
+    // 1. Remove DC bias
+    let mean = 0;
+    for (let i = 0; i < sampleCount; i++)
+        mean += audioFloat32[i];
+    mean /= sampleCount;
+    for (let i = 0; i < sampleCount; i++)
+        audioFloat32[i] -= mean;
+    // 2. Trim leading and trailing silence to eliminate padding hallucinations and speed up inference
+    const trimThreshold = Math.max(0.006, rms * 0.2);
     let speechStart = 0;
     for (let i = 0; i < sampleCount; i++) {
-        if (Math.abs(audioFloat32[i]) >= 0.008) {
-            speechStart = Math.max(0, i - 2400); // 150ms pre-roll
+        if (Math.abs(audioFloat32[i]) >= trimThreshold) {
+            speechStart = Math.max(0, i - 3200); // 200ms pre-roll
             break;
         }
     }
     let speechEnd = sampleCount;
     for (let i = sampleCount - 1; i >= speechStart; i--) {
-        if (Math.abs(audioFloat32[i]) >= 0.008) {
-            speechEnd = Math.min(sampleCount, i + 3200); // 200ms post-roll
+        if (Math.abs(audioFloat32[i]) >= trimThreshold) {
+            speechEnd = Math.min(sampleCount, i + 4800); // 300ms post-roll
             break;
         }
     }
     const activeAudio = audioFloat32.slice(speechStart, speechEnd);
     console.log(`[Whisper] Active speech segment: ${activeAudio.length} samples (~${(activeAudio.length / 16000).toFixed(2)}s, trimmed ${speechStart} leading samples)`);
-    if (activeAudio.length < 4800) {
-        console.log('[Whisper] Rejected: trimmed active speech too short (< 0.3s)');
+    if (activeAudio.length < 4000) {
+        console.log('[Whisper] Rejected: trimmed active speech too short (< 0.25s)');
         return '';
     }
-    // Gentle normalization to protect SNR without amplifying background hiss
-    if (maxAmp < 0.25 && maxAmp >= 0.01) {
-        const scale = Math.min(2.5, 0.45 / maxAmp);
+    // 3. Peak normalize to 0.75 and clamp to [-1.0, 1.0] for optimal ONNX Mel filterbank extraction
+    let peak = 0;
+    for (let i = 0; i < activeAudio.length; i++) {
+        const a = Math.abs(activeAudio[i]);
+        if (a > peak)
+            peak = a;
+    }
+    if (peak > 0.001) {
+        const normScale = Math.min(4.0, 0.75 / peak);
         for (let i = 0; i < activeAudio.length; i++) {
-            activeAudio[i] *= scale;
+            let v = activeAudio[i] * normScale;
+            if (v > 1.0)
+                v = 1.0;
+            else if (v < -1.0)
+                v = -1.0;
+            activeAudio[i] = v;
         }
     }
     const transcriber = await getTranscriber();

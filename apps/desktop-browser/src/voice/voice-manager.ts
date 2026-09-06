@@ -293,6 +293,12 @@ export class VoiceManager {
         // Accumulate audio chunk for Whisper transcription
         this.commandAudioChunks.push(pcm16k);
         this.totalCommandSamples += pcm16k.length;
+
+        // Directly detect speech energy from frame RMS
+        if (rms >= 0.005) {
+          this.hasDetectedUserSpeech = true;
+        }
+
         // Feed VAD to identify speech completion
         this.vad.processChunk(pcm16k);
         break;
@@ -316,10 +322,10 @@ export class VoiceManager {
     this.hasDetectedUserSpeech = false;
     this.vad.reset();
 
-    // 1.5s grace window allows user to take a breath and begin command
-    this.wakeGraceUntil = Date.now() + 1500;
+    // 1.2s grace window allows user to begin command without premature silence cutoff
+    this.wakeGraceUntil = Date.now() + 1200;
 
-    // Immediately enter COMMAND_LISTENING to prevent dropping the first syllables of user's command
+    // Immediately enter COMMAND_LISTENING to capture the user's command
     this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
 
     // Safety timeout (8.5 seconds max command)
@@ -365,9 +371,9 @@ export class VoiceManager {
 
     if (this.currentState !== 'COMMAND_LISTENING') return;
 
-    // Reject audio if duration is < 0.4s (6400 samples at 16kHz)
-    if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 6400) {
-      console.log(`[VoiceManager] Captured audio too short (${this.totalCommandSamples} samples < 6400), discarding.`);
+    // Reject audio if duration is < 0.3s (4800 samples at 16kHz)
+    if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 4800) {
+      console.log(`[VoiceManager] Captured audio too short (${this.totalCommandSamples} samples < 4800), discarding.`);
       this.resetToWakeListening();
       return;
     }
@@ -382,7 +388,7 @@ export class VoiceManager {
     this.commandAudioChunks = [];
     this.totalCommandSamples = 0;
 
-    // Check peak amplitude and active speech RMS (do not reject conversational volume speech)
+    // Check peak amplitude and active speech RMS
     let maxAmp = 0;
     let sumSq = 0;
     for (let i = 0; i < fullBuffer.length; i++) {
@@ -392,8 +398,10 @@ export class VoiceManager {
     }
     const avgRms = Math.sqrt(sumSq / fullBuffer.length);
 
-    if (!this.hasDetectedUserSpeech || maxAmp < 0.02) {
-      console.log(`[VoiceManager] No command speech detected (hasSpeech: ${this.hasDetectedUserSpeech}, MaxAmp: ${maxAmp.toFixed(4)}), skipping Whisper.`);
+    // Only skip Whisper if buffer is absolute silence / empty noise
+    const hasVoiceEnergy = this.hasDetectedUserSpeech || maxAmp >= 0.015 || avgRms >= 0.002;
+    if (!hasVoiceEnergy) {
+      console.log(`[VoiceManager] No command speech detected (hasSpeech: ${this.hasDetectedUserSpeech}, MaxAmp: ${maxAmp.toFixed(4)}, RMS: ${avgRms.toFixed(5)}), skipping Whisper.`);
       this.resetToWakeListening();
       return;
     }

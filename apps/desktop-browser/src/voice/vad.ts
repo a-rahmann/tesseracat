@@ -47,6 +47,7 @@ export class VoiceActivityDetector {
     this.consecutiveSpeechFrames = 0;
     this.consecutiveSilenceFrames = 0;
     this.totalSpeechFrames = 0;
+    this.baselineRms = 0.003;
   }
 
   public onSpeechStart(cb: () => void): void {
@@ -77,11 +78,14 @@ export class VoiceActivityDetector {
     }
 
     const rms = Math.sqrt(sumSq / samples.length);
-    const speechThreshold = Math.max(0.004, this.baselineRms * this.speechMultiplier);
+    // Guarantee speechThreshold remains within realistic human speech range [0.004, 0.018]
+    const speechThreshold = Math.max(0.004, Math.min(0.018, this.baselineRms * this.speechMultiplier));
 
     if (!this.isSpeaking) {
-      // Adapt baseline smoothly during silence
-      this.baselineRms = this.baselineRms * (1 - this.noiseFloorAdaptRate) + rms * this.noiseFloorAdaptRate;
+      // Only adapt baseline noise floor during actual ambient silence
+      if (rms < 0.012) {
+        this.baselineRms = this.baselineRms * (1 - this.noiseFloorAdaptRate) + rms * this.noiseFloorAdaptRate;
+      }
 
       if (rms > speechThreshold) {
         this.consecutiveSpeechFrames++;
