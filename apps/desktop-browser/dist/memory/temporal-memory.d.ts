@@ -58,6 +58,10 @@ export declare class TemporalMemory {
         topic?: string;
         contentSnippet: string;
     }): TemporalRecord;
+    recordVisit(data: {
+        url: string;
+        title: string;
+    }): TemporalRecord | null;
     /**
      * Multi-dimensional search across time, entities, website, topic, and content.
      */

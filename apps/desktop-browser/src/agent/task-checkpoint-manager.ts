@@ -6,16 +6,9 @@
 import fs from 'fs';
 import path from 'path';
 import { getAppDataDir } from '../platform/index.js';
+import { TaskCheckpoint } from './types.js';
 
-export interface TaskCheckpoint {
-  taskId: string;
-  goal: string;
-  task?: string;
-  timestamp: number;
-  completedSteps: string[];
-  remainingSteps: string[];
-  contextData: Record<string, any>;
-}
+export { TaskCheckpoint };
 
 export class TaskCheckpointManager {
   private static instance: TaskCheckpointManager | null = null;
@@ -62,21 +55,26 @@ export class TaskCheckpointManager {
     }
   }
 
-  public saveCheckpoint(cp: any): void {
+  public saveCheckpoint(cp: Partial<TaskCheckpoint> & { taskId: string; goal: string }): void {
     const taskId = cp.taskId || `cp_${Date.now()}`;
-    const goal = cp.goal || cp.task || 'Autonomous Mission';
+    const goal = cp.goal || 'Autonomous Mission';
     const norm: TaskCheckpoint = {
       taskId,
       goal,
-      task: goal,
-      timestamp: cp.timestamp || Date.now(),
-      completedSteps: cp.completedSteps || cp.completedActions || [],
+      currentStepIndex: cp.currentStepIndex || 0,
+      completedSteps: cp.completedSteps || [],
       remainingSteps: cp.remainingSteps || [],
-      contextData: cp.contextData || cp.state || {},
+      currentUrl: cp.currentUrl || '',
+      activeTabId: cp.activeTabId,
+      openTabIds: cp.openTabIds || [],
+      pageStateHash: cp.pageStateHash || '',
+      pendingHumanAction: cp.pendingHumanAction,
+      contextData: cp.contextData || {},
+      timestamp: cp.timestamp || Date.now(),
     };
     this.checkpoints.set(taskId, norm);
     this.save();
-    console.log(`[TaskCheckpointManager] Saved checkpoint for "${goal}" (${norm.completedSteps.length} steps done)`);
+    console.log(`[TaskCheckpointManager] Saved checkpoint for "${goal}" (step ${norm.currentStepIndex}, ${norm.completedSteps.length} steps completed)`);
   }
 
   public getLatestCheckpoint(): TaskCheckpoint | null {

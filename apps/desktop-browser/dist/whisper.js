@@ -92,8 +92,8 @@ async function transcribeAudioBuffer(audioFloat32) {
     }
     const activeAudio = audioFloat32.slice(speechStart, speechEnd);
     console.log(`[Whisper] Active speech segment: ${activeAudio.length} samples (~${(activeAudio.length / 16000).toFixed(2)}s, trimmed ${speechStart} leading samples)`);
-    if (activeAudio.length < 4000) {
-        console.log('[Whisper] Rejected: trimmed active speech too short (< 0.25s)');
+    if (activeAudio.length < 1800) {
+        console.log('[Whisper] Rejected: trimmed active speech too short (< 0.11s)');
         return '';
     }
     // 3. Peak normalize to 0.75 and clamp to [-1.0, 1.0] for optimal ONNX Mel filterbank extraction
@@ -118,8 +118,6 @@ async function transcribeAudioBuffer(audioFloat32) {
     console.log('[Whisper] Inference started...');
     const t0 = Date.now();
     const transcriberOptions = {
-        language: 'en',
-        task: 'transcribe',
         return_timestamps: false,
     };
     if (activeAudio.length > 20 * 16000) {

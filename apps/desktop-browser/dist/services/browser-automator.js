@@ -17,6 +17,8 @@ class BrowserAutomator {
         return BrowserAutomator.instance;
     }
     getWebview() {
+        if (typeof document === 'undefined')
+            return null;
         return document.getElementById('webview');
     }
     async executeScript(script, timeoutMs = 6000) {
@@ -87,7 +89,10 @@ class BrowserAutomator {
             wv.addEventListener('did-finish-load', onDone, { once: true });
             setTimeout(onDone, 4000); // Fast safety fallback
             try {
-                if (typeof window.navigateToUrl === 'function') {
+                if (url.startsWith('data:') || url.startsWith('file:') || url.startsWith('about:')) {
+                    wv.src = url;
+                }
+                else if (typeof window.navigateToUrl === 'function') {
                     window.navigateToUrl(url);
                 }
                 else {
@@ -156,7 +161,28 @@ class BrowserAutomator {
             console.log(`[Browser] click by elementId started: "${options.elementId}"`);
             const script = `
         (() => {
-          const el = document.querySelector('[data-tesseract-id="${options.elementId}"]') || document.getElementById('${options.elementId}');
+          function queryDeep(sel, root = document) {
+            let found = root.querySelector(sel);
+            if (found) return found;
+            const all = root.querySelectorAll('*');
+            for (const el of all) {
+              if (el.shadowRoot) {
+                found = queryDeep(sel, el.shadowRoot);
+                if (found) return found;
+              }
+              if (el.tagName === 'IFRAME') {
+                try {
+                  if (el.contentDocument && el.contentDocument.body) {
+                    found = queryDeep(sel, el.contentDocument.body);
+                    if (found) return found;
+                  }
+                } catch (_) {}
+              }
+            }
+            return null;
+          }
+
+          const el = queryDeep('[data-tesseract-id="${options.elementId}"]') || document.getElementById('${options.elementId}');
           if (!el) return false;
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -174,7 +200,28 @@ class BrowserAutomator {
         console.log(`[Browser] clickElement started: "${selector}"`);
         const script = `
       (() => {
-        const el = document.querySelector(${JSON.stringify(selector)});
+        function queryDeep(sel, root = document) {
+          let found = root.querySelector(sel);
+          if (found) return found;
+          const all = root.querySelectorAll('*');
+          for (const el of all) {
+            if (el.shadowRoot) {
+              found = queryDeep(sel, el.shadowRoot);
+              if (found) return found;
+            }
+            if (el.tagName === 'IFRAME') {
+              try {
+                if (el.contentDocument && el.contentDocument.body) {
+                  found = queryDeep(sel, el.contentDocument.body);
+                  if (found) return found;
+                }
+              } catch (_) {}
+            }
+          }
+          return null;
+        }
+
+        const el = queryDeep(${JSON.stringify(selector)});
         if (!el) return false;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         const prevOutline = el.style.outline;
@@ -297,12 +344,33 @@ class BrowserAutomator {
         console.log(`[Browser] type started: text="${text}", selector="${selector || ''}", elementId="${elementId || ''}", pressEnter=${pressEnter}`);
         const script = `
       (() => {
+        function queryDeep(sel, root = document) {
+          let found = root.querySelector(sel);
+          if (found) return found;
+          const all = root.querySelectorAll('*');
+          for (const el of all) {
+            if (el.shadowRoot) {
+              found = queryDeep(sel, el.shadowRoot);
+              if (found) return found;
+            }
+            if (el.tagName === 'IFRAME') {
+              try {
+                if (el.contentDocument && el.contentDocument.body) {
+                  found = queryDeep(sel, el.contentDocument.body);
+                  if (found) return found;
+                }
+              } catch (_) {}
+            }
+          }
+          return null;
+        }
+
         let el = null;
         if (${JSON.stringify(elementId || '')}) {
-          el = document.querySelector('[data-tesseract-id="${elementId}"]') || document.getElementById('${elementId}');
+          el = queryDeep('[data-tesseract-id="${elementId}"]') || document.getElementById('${elementId}');
         }
         if (!el && ${JSON.stringify(selector || '')}) {
-          el = document.querySelector(${JSON.stringify(selector || '')});
+          el = queryDeep(${JSON.stringify(selector || '')});
         }
         if (!el) return false;
 
@@ -464,6 +532,124 @@ class BrowserAutomator {
         }
         catch (_) { }
         return { success: false, error: 'Could not observe current page content' };
+    }
+    /**
+     * Hover over an element.
+     */
+    async hover(options) {
+        const script = `
+      (() => {
+        let el = null;
+        if (${JSON.stringify(options.elementId || '')}) {
+          el = document.querySelector('[data-tesseract-id="${options.elementId}"]') || document.getElementById('${options.elementId}');
+        }
+        if (!el && ${JSON.stringify(options.selector || '')}) {
+          el = document.querySelector(${JSON.stringify(options.selector || '')});
+        }
+        if (!el) return false;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        return true;
+      })()
+    `;
+        const result = await this.executeWhenReady(script);
+        return { success: Boolean(result), result };
+    }
+    /**
+     * Select an option from a <select> dropdown element.
+     */
+    async selectOption(options) {
+        const script = `
+      (() => {
+        let el = null;
+        if (${JSON.stringify(options.elementId || '')}) {
+          el = document.querySelector('[data-tesseract-id="${options.elementId}"]') || document.getElementById('${options.elementId}');
+        }
+        if (!el && ${JSON.stringify(options.selector || '')}) {
+          el = document.querySelector(${JSON.stringify(options.selector || '')});
+        }
+        if (!el || el.tagName !== 'SELECT') return false;
+        el.value = ${JSON.stringify(options.value)};
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()
+    `;
+        const result = await this.executeWhenReady(script);
+        return { success: Boolean(result), result };
+    }
+    /**
+     * Press key with optional modifiers.
+     */
+    async pressKey(key, modifiers = {}) {
+        const script = `
+      (() => {
+        const eventInit = {
+          key: ${JSON.stringify(key)},
+          code: ${JSON.stringify(key.length === 1 ? 'Key' + key.toUpperCase() : key)},
+          ctrlKey: ${Boolean(modifiers.ctrl)},
+          shiftKey: ${Boolean(modifiers.shift)},
+          altKey: ${Boolean(modifiers.alt)},
+          metaKey: ${Boolean(modifiers.meta)},
+          bubbles: true,
+          cancelable: true
+        };
+        const target = document.activeElement || document.body;
+        target.dispatchEvent(new KeyboardEvent('keydown', eventInit));
+        target.dispatchEvent(new KeyboardEvent('keypress', eventInit));
+        target.dispatchEvent(new KeyboardEvent('keyup', eventInit));
+        return true;
+      })()
+    `;
+        const result = await this.executeWhenReady(script);
+        return { success: Boolean(result) };
+    }
+    /**
+     * Switch active tab by tabId.
+     */
+    async switchTab(tabId) {
+        try {
+            if (typeof window.activateTab === 'function') {
+                window.activateTab(tabId);
+                return { success: true, result: tabId };
+            }
+            return { success: false, error: 'activateTab not available on window' };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+    /**
+     * List open browser tabs.
+     */
+    async listTabs() {
+        try {
+            const tabs = window.tabs || [];
+            const activeId = window.activeTabId;
+            const formatted = tabs.map((t) => ({
+                id: t.id,
+                url: t.url,
+                title: t.title,
+                active: t.id === activeId,
+            }));
+            return { success: true, result: formatted };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+    /**
+     * Verify whether an element matching a selector or condition exists.
+     */
+    async verifyElement(selector, timeoutMs = 4000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const found = await this.executeWhenReady(`Boolean(document.querySelector(${JSON.stringify(selector)}))`);
+            if (found)
+                return true;
+            await new Promise(r => setTimeout(r, 200));
+        }
+        return false;
     }
 }
 exports.BrowserAutomator = BrowserAutomator;

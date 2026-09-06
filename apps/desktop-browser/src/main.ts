@@ -113,6 +113,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       webviewTag: true,
+      webSecurity: false,
       backgroundThrottling: false,
     },
   });
@@ -157,7 +158,162 @@ function createWindow() {
       if (mainWindow) mainWindow.webContents.send('download-event', downloadHistory);
     });
   });
+
+  if (process.argv.includes('--hardening-test')) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('[Main] Electron window ready. Launching live hardening suite in 2.5s...');
+      setTimeout(() => {
+        mainWindow?.webContents.executeJavaScript(`
+          if (typeof window.runHardeningSuite === 'function') {
+            window.runHardeningSuite().then((results) => {
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('hardening-complete', results);
+            }).catch((err) => {
+              console.error('[Hardening Error]', err);
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('hardening-complete', []);
+            });
+          } else {
+            console.error('[Main] runHardeningSuite not found on window');
+          }
+        `);
+      }, 2500);
+    });
+  }
+
+  if (process.argv.includes('--complex-hardening-test')) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('[Main] Electron window ready. Launching complex web hardening suite in 2.5s...');
+      setTimeout(() => {
+        mainWindow?.webContents.executeJavaScript(`
+          if (typeof window.runComplexHardeningSuite === 'function') {
+            window.runComplexHardeningSuite().then((results) => {
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('complex-hardening-complete', results);
+            }).catch((err) => {
+              console.error('[Complex Hardening Error]', err);
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('complex-hardening-complete', []);
+            });
+          } else {
+            console.error('[Main] runComplexHardeningSuite not found on window');
+          }
+        `);
+      }, 2500);
+    });
+  }
+  if (process.argv.includes('--voice-llm-diagnostic-test')) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('[Main] Electron window ready. Launching voice & LLM diagnostic suite in 2.5s...');
+      setTimeout(() => {
+        mainWindow?.webContents.executeJavaScript(`
+          if (typeof window.runVoiceLlmDiagnosticSuite === 'function') {
+            window.runVoiceLlmDiagnosticSuite().then((results) => {
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('voice-diagnostic-complete', results);
+            }).catch((err) => {
+              console.error('[Voice Diagnostic Error]', err);
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('voice-diagnostic-complete', []);
+            });
+          } else {
+            console.error('[Main] runVoiceLlmDiagnosticSuite not found on window');
+          }
+        `);
+      }, 2500);
+    });
+  }
+
+  if (process.argv.includes('--latency-benchmark-test')) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('[Main] Electron window ready. Launching real-time latency benchmark suite in 2.5s...');
+      setTimeout(() => {
+        mainWindow?.webContents.executeJavaScript(`
+          if (typeof window.runLatencyBenchmarkSuite === 'function') {
+            window.runLatencyBenchmarkSuite().then((results) => {
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('latency-benchmark-complete', results);
+            }).catch((err) => {
+              console.error('[Latency Benchmark Error]', err);
+              const { ipcRenderer } = require('electron');
+              ipcRenderer.send('latency-benchmark-complete', []);
+            });
+          } else {
+            console.error('[Main] runLatencyBenchmarkSuite not found on window');
+          }
+        `);
+      }, 2500);
+    });
+  }
 }
+
+ipcMain.on('hardening-complete', (_event, reports) => {
+  console.log(`\n[Main] Hardening test suite completed with ${reports?.length || 0} reports.`);
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const outPath = path.join(process.cwd(), 'scratch/hardening_results.json');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(reports, null, 2), 'utf-8');
+    console.log(`[Main] Saved reports to ${outPath}`);
+  } catch (err) {
+    console.error('[Main] Failed to save hardening report:', err);
+  }
+  setTimeout(() => {
+    app.quit();
+  }, 1500);
+});
+
+ipcMain.on('complex-hardening-complete', (_event, reports) => {
+  console.log(`\n[Main] Complex web hardening test suite completed with ${reports?.length || 0} reports.`);
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const outPath = path.join(process.cwd(), 'scratch/complex_hardening_results.json');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(reports, null, 2), 'utf-8');
+    console.log(`[Main] Saved complex reports to ${outPath}`);
+  } catch (err) {
+    console.error('[Main] Failed to save complex hardening report:', err);
+  }
+  setTimeout(() => {
+    app.quit();
+  }, 1500);
+});
+
+ipcMain.on('voice-diagnostic-complete', (_event, reports) => {
+  console.log(`\n[Main] Voice & LLM diagnostic suite completed with ${reports?.length || 0} reports.`);
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const outPath = path.join(process.cwd(), 'scratch/voice_diagnostic_results.json');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(reports, null, 2), 'utf-8');
+    console.log(`[Main] Saved voice diagnostic reports to ${outPath}`);
+  } catch (err) {
+    console.error('[Main] Failed to save voice diagnostic report:', err);
+  }
+  setTimeout(() => {
+    app.quit();
+  }, 1500);
+});
+
+ipcMain.on('latency-benchmark-complete', (_event, reports) => {
+  console.log(`\n[Main] Real-time latency benchmark completed with ${reports?.length || 0} reports.`);
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const outPath = path.join(process.cwd(), 'scratch/latency_benchmark_results.json');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(reports, null, 2), 'utf-8');
+    console.log(`[Main] Saved latency benchmark reports to ${outPath}`);
+  } catch (err) {
+    console.error('[Main] Failed to save latency benchmark report:', err);
+  }
+  setTimeout(() => {
+    app.quit();
+  }, 1500);
+});
 
 app.whenReady().then(async () => {
   // Automatically grant microphone and media permissions in Electron renderer

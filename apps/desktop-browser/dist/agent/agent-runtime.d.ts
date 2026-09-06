@@ -4,7 +4,7 @@
  * Target-aware execution: WHAT, WHERE, ACTION with verified live browser state.
  */
 export interface AgentTaskState {
-    status: 'idle' | 'thinking' | 'executing' | 'speaking' | 'success' | 'error';
+    status: 'idle' | 'thinking' | 'planning' | 'executing' | 'speaking' | 'success' | 'error';
     goal?: string;
     currentAction?: string;
     progress: number;
@@ -14,6 +14,8 @@ export interface AgentTaskState {
         status: string;
     }>;
     error?: string;
+    currentStep?: string;
+    latencySummary?: string;
 }
 export type AgentStateListener = (state: AgentTaskState) => void;
 export declare class AgentRuntime {
@@ -21,6 +23,7 @@ export declare class AgentRuntime {
     private voiceManager;
     private model;
     private actionLoop;
+    private tts;
     private currentCancellationToken;
     private state;
     private listeners;
@@ -32,9 +35,15 @@ export declare class AgentRuntime {
     cancelActiveTask(): void;
     speak(text: string): Promise<void>;
     /**
-     * Main command dispatch pipeline with explicit ACTION != SEARCH routing.
+     * Main command dispatch pipeline.
+     * Architecture: Voice/Text -> NLU Interpreter (Gemma 3 4B) -> Task Manager -> Dynamic Planner -> Action Loop.
+     * Legacy greedy regex waterfall eliminated.
      */
     handleUserCommand(rawCommand: string): Promise<void>;
+    /**
+     * Autonomous Mission Execution Engine
+     */
+    private executeAutonomousMission;
     /**
      * Verified Multi-step PLAY Action:
      * "Play Loser on YouTube" -> Open YouTube -> Search "Loser" -> Click Result -> Verify Playback

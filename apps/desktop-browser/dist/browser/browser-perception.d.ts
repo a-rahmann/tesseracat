@@ -42,6 +42,14 @@ export declare class BrowserPerception {
         elements: SnapshotElement[];
         formattedView: string;
         media: VideoStateObservation;
+        hasLoginForm: boolean;
+        hasCaptcha: boolean;
+        captchaType?: string;
+        hasPaymentForm: boolean;
+        hasCanvasControls?: boolean;
+        requiresVisualFallback?: boolean;
+        screenshotBase64?: string;
+        isPdfDocument: boolean;
         timestamp: number;
     }>;
     /**

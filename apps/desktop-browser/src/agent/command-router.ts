@@ -212,24 +212,29 @@ export class CommandRouter {
       };
     }
 
-    // 4. NAVIGATION COMMANDS ("Open YouTube", "Go to Instagram", "Open Gmail")
+    // 4. NAVIGATION COMMANDS (ONLY for isolated destination names like "open youtube", "go to instagram")
     const navMatch = clean.match(/^(?:open|go\s+to|navigate\s+to|launch|visit)\s+(.+)$/i);
     if (navMatch) {
       const dest = navMatch[1].trim();
-      if (/youtube/i.test(dest)) return { action: 'NAVIGATE', location: 'youtube', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
-      if (/instagram/i.test(dest)) return { action: 'NAVIGATE', location: 'instagram', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
-      if (/gmail/i.test(dest)) return { action: 'NAVIGATE', location: 'gmail', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
-      if (/amazon/i.test(dest)) return { action: 'NAVIGATE', location: 'amazon', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
+      const isCompound = /\b(and|then|check|see|message|dm|tell|look|search|find|compare|read)\b/i.test(dest);
+      if (!isCompound) {
+        if (/^youtube$/i.test(dest)) return { action: 'NAVIGATE', location: 'youtube', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
+        if (/^instagram$/i.test(dest)) return { action: 'NAVIGATE', location: 'instagram', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
+        if (/^gmail$/i.test(dest)) return { action: 'NAVIGATE', location: 'gmail', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
+        if (/^amazon$/i.test(dest)) return { action: 'NAVIGATE', location: 'amazon', rawText: raw, cleanText: clean, isFastPath: false, requiresBrowserPerception: false };
 
-      return {
-        action: 'NAVIGATE',
-        location: 'web',
-        query: dest,
-        rawText: raw,
-        cleanText: clean,
-        isFastPath: false,
-        requiresBrowserPerception: false,
-      };
+        if (dest.split(/\s+/).length <= 2) {
+          return {
+            action: 'NAVIGATE',
+            location: 'web',
+            query: dest,
+            rawText: raw,
+            cleanText: clean,
+            isFastPath: false,
+            requiresBrowserPerception: false,
+          };
+        }
+      }
     }
 
     // 5. EXPLICIT SEARCH (ONLY when user explicitly requests a search!)

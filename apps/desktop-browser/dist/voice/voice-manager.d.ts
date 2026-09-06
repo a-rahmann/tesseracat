@@ -39,7 +39,10 @@ export declare class VoiceManager {
     private isMuted;
     private commandAudioChunks;
     private totalCommandSamples;
+    private preRollChunks;
+    private preRollSamples;
     private maxCommandDurationTimer;
+    private isStandbyMode;
     private wakeGraceUntil;
     private hasDetectedUserSpeech;
     private stateListeners;
@@ -62,6 +65,7 @@ export declare class VoiceManager {
     ensureAudioCapture(): Promise<boolean>;
     startWakeListening(): Promise<void>;
     stopWakeListening(): void;
+    setMuted(muted: boolean): void;
     isWakeWordEnabled(): boolean;
     /**
      * Core real-time audio processing loop.
@@ -75,6 +79,8 @@ export declare class VoiceManager {
     setSpeaking(): void;
     setSpeakingTTS(active: boolean): void;
     resetVoiceSession(): void;
+    setStandbyMode(enabled: boolean): void;
+    isStandby(): boolean;
     resetToWakeListening(): void;
     triggerInterruption(): void;
     private holdStartTimestamp;

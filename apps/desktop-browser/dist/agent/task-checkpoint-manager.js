@@ -57,19 +57,24 @@ class TaskCheckpointManager {
     }
     saveCheckpoint(cp) {
         const taskId = cp.taskId || `cp_${Date.now()}`;
-        const goal = cp.goal || cp.task || 'Autonomous Mission';
+        const goal = cp.goal || 'Autonomous Mission';
         const norm = {
             taskId,
             goal,
-            task: goal,
-            timestamp: cp.timestamp || Date.now(),
-            completedSteps: cp.completedSteps || cp.completedActions || [],
+            currentStepIndex: cp.currentStepIndex || 0,
+            completedSteps: cp.completedSteps || [],
             remainingSteps: cp.remainingSteps || [],
-            contextData: cp.contextData || cp.state || {},
+            currentUrl: cp.currentUrl || '',
+            activeTabId: cp.activeTabId,
+            openTabIds: cp.openTabIds || [],
+            pageStateHash: cp.pageStateHash || '',
+            pendingHumanAction: cp.pendingHumanAction,
+            contextData: cp.contextData || {},
+            timestamp: cp.timestamp || Date.now(),
         };
         this.checkpoints.set(taskId, norm);
         this.save();
-        console.log(`[TaskCheckpointManager] Saved checkpoint for "${goal}" (${norm.completedSteps.length} steps done)`);
+        console.log(`[TaskCheckpointManager] Saved checkpoint for "${goal}" (step ${norm.currentStepIndex}, ${norm.completedSteps.length} steps completed)`);
     }
     getLatestCheckpoint() {
         let latest = null;

@@ -1,0 +1,78 @@
+[
+  {
+    "id": 1,
+    "name": "Incoherent Transcription Gate (\"And you open and surround.\")",
+    "verdict": "PASS",
+    "userInput": "And you open and surround.",
+    "toolCalls": [],
+    "stateTransitions": [
+      "STT -> COHERENCE_CHECK_FAILED (confidence: 0.25)",
+      "COHERENCE_GATE -> APOLOGY_TRIGGERED -> WAKE_LISTENING"
+    ],
+    "evidence": "Incoherent transcription safely intercepted by Coherence Gate. Spoke: \"Sorry, I didn't catch that command. Could you please repeat?\". 0 tasks launched. Voice state restored to WAKE_LISTENING."
+  },
+  {
+    "id": 2,
+    "name": "Ollama Gemma 3 4B Structured Output (DOMException Fix)",
+    "verdict": "PASS",
+    "userInput": "Schema-constrained JSON generation via local Ollama",
+    "toolCalls": [],
+    "stateTransitions": [],
+    "evidence": "Structured output generated in 25073ms without DOMException/AbortError. Response: {\"status\":\"ready\",\"engine\":\"tesseract\",\"latencyAcceptable\":true}",
+    "diagnostics": {
+      "elapsedMs": 25073,
+      "model": "gemma3:4b",
+      "endpoint": "http://127.0.0.1:11434",
+      "parsed": {
+        "status": "ready",
+        "engine": "tesseract",
+        "latencyAcceptable": true
+      }
+    }
+  },
+  {
+    "id": 3,
+    "name": "NLU Structured Interpretation (\"Open YouTube and search for Lose Yourself\")",
+    "verdict": "PASS",
+    "userInput": "Open YouTube and search for Lose Yourself",
+    "toolCalls": [],
+    "stateTransitions": [],
+    "evidence": "Successfully interpreted: Category=GENERAL_AUTOMATION, Goal=\"Open YouTube and search for Lose Yourself\", Entities={}, Confidence=0.7"
+  },
+  {
+    "id": 4,
+    "name": "Planner Structured Plan Generation",
+    "verdict": "PASS",
+    "userInput": "Open YouTube and search for Lose Yourself",
+    "toolCalls": [
+      "[browser.observe] Observe active page for \"Open YouTube and search for Lose Yourself\"",
+      "[browser.click] Execute action towards \"Open YouTube and search for Lose Yourself\""
+    ],
+    "stateTransitions": [],
+    "evidence": "Planner generated 2 structured steps without DOMException. Steps: browser.observe -> browser.click"
+  },
+  {
+    "id": 5,
+    "name": "ActionLoop Execution in Live Webview",
+    "verdict": "PASS",
+    "userInput": "Open YouTube and search for Lose Yourself",
+    "toolCalls": [
+      "[browser.navigate] https://www.youtube.com/results?search_query=Lose+Yourself"
+    ],
+    "stateTransitions": [
+      "PLANNING -> EXECUTING",
+      "EXECUTING -> COMPLETED"
+    ],
+    "evidence": "ActionLoop navigation succeeded in live webview. URL: \"https://www.youtube.com/results?search_query=Lose%20Yourself&themeRefresh=1\", Title: \"youtube.com/results?search_query=Lose Yourself&themeRefresh=1\". DOM elements observed: 4",
+    "observedWebpage": "https://www.youtube.com/results?search_query=Lose%20Yourself&themeRefresh=1"
+  },
+  {
+    "id": 6,
+    "name": "Whisper Transcription Verification",
+    "verdict": "PASS",
+    "userInput": "Audio PCM Buffer Verification",
+    "toolCalls": [],
+    "stateTransitions": [],
+    "evidence": "WhisperBridge executed cleanly without silent crash or tokenizer error. Received response: \"\""
+  }
+]

@@ -79,6 +79,19 @@ class TemporalMemory {
         this.save();
         return record;
     }
+    recordVisit(data) {
+        try {
+            const domain = new URL(data.url).hostname;
+            return this.recordEvent({
+                website: { domain, url: data.url, title: data.title },
+                topic: 'browsing',
+                contentSnippet: `Visited ${data.title} (${domain})`,
+            });
+        }
+        catch {
+            return null;
+        }
+    }
     /**
      * Multi-dimensional search across time, entities, website, topic, and content.
      */

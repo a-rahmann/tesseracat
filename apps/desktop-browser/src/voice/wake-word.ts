@@ -140,33 +140,33 @@ export class WakeWordDetector {
       const elapsedMs = (this.totalUtteranceSamples / this.sampleRate) * 1000;
 
       // Track the 4 phonetic stages of "Hey / Hi" + "Tess" + "er" + "act"
-      // Stage 1: "Hey" / "Hi" (Voiced vowel: strong RMS, low ZCR < 0.22)
-      if (!this.phoneticStages[0] && elapsedMs < 450) {
-        if (rms > speechThreshold * 1.6 && zcr < 0.22) {
+      // Stage 1: "Hey" / "Hi" (Voiced vowel: strong RMS, flexible ZCR < 0.28)
+      if (!this.phoneticStages[0] && elapsedMs < 550) {
+        if (rms > speechThreshold * 1.3 && zcr < 0.28) {
           this.phoneticStages[0] = true;
           this.stageTimings[0] = elapsedMs;
         }
       }
 
-      // Stage 2: "Tess" (/t/ transient + /s/ fricative: high ZCR > 0.32, strong highFreqRatio > 0.42)
-      if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 200 && elapsedMs < 850) {
-        if (zcr > 0.30 && highFreqRatio > 0.40) {
+      // Stage 2: "Tess" (/t/ transient + /s/ fricative: high ZCR > 0.26, highFreqRatio > 0.34)
+      if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 150 && elapsedMs < 950) {
+        if (zcr > 0.26 && highFreqRatio > 0.34) {
           this.phoneticStages[1] = true;
           this.stageTimings[1] = elapsedMs;
         }
       }
 
       // Stage 3: "er" (Vocalic dip: moderate RMS, dip in ZCR)
-      if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 380 && elapsedMs < 1150) {
-        if (zcr < 0.25 && rms > speechThreshold) {
+      if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 320 && elapsedMs < 1300) {
+        if (zcr < 0.30 && rms > speechThreshold * 0.9) {
           this.phoneticStages[2] = true;
           this.stageTimings[2] = elapsedMs;
         }
       }
 
-      // Stage 4: "act" (/k/ + /t/ release: sharp high-frequency transient)
-      if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 550 && elapsedMs < 1500) {
-        if (zcr > 0.26 && highFreqRatio > 0.36) {
+      // Stage 4: "act" (/k/ + /t/ release: high-frequency transient)
+      if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 480 && elapsedMs < 1700) {
+        if (zcr > 0.23 && highFreqRatio > 0.30) {
           this.phoneticStages[3] = true;
           this.stageTimings[3] = elapsedMs;
         }
@@ -179,11 +179,11 @@ export class WakeWordDetector {
         this.silenceFramesCount = Math.max(0, this.silenceFramesCount - 1);
       }
 
-      // Evaluate detection criteria: ALL 4 phonetic stages MUST be passed in sequential order
-      const isCandidateDuration = elapsedMs >= 600 && elapsedMs <= 1800;
-      const isSequential = this.stageTimings[0] < this.stageTimings[1] &&
-                           this.stageTimings[1] < this.stageTimings[2] &&
-                           this.stageTimings[2] < this.stageTimings[3];
+      // Evaluate detection criteria: ALL 4 phonetic stages passed in sequential order
+      const isCandidateDuration = elapsedMs >= 450 && elapsedMs <= 2100;
+      const isSequential = this.stageTimings[0] <= this.stageTimings[1] &&
+                           this.stageTimings[1] <= this.stageTimings[2] &&
+                           this.stageTimings[2] <= this.stageTimings[3];
       const allPhoneticsPassed = this.phoneticStages[0] &&
                                  this.phoneticStages[1] &&
                                  this.phoneticStages[2] &&

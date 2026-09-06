@@ -1117,7 +1117,7 @@
 
     <!-- 3. VIEWPORT CONTAINER -->
     <div id="viewport-container">
-      <webview id="webview" src="about:blank" allowpopups webpreferences="contextIsolation=no"></webview>
+      <webview id="webview" src="about:blank" allowpopups webpreferences="contextIsolation=no" partition="persist:tesseract_session"></webview>
 
       <!-- START PAGE -->
       <div id="start-page">
@@ -1297,6 +1297,82 @@
       console.error('[Tesseract Init] Error loading compiled services from dist/services/index.js:', err);
     }
 
+    try {
+      let hardening;
+      try {
+        hardening = require('../dist/testing/live-browser-hardening.js');
+      } catch (e1) {
+        try {
+          hardening = require('./dist/testing/live-browser-hardening.js');
+        } catch (e2) {
+          hardening = require(require('path').join(process.cwd(), 'apps/desktop-browser/dist/testing/live-browser-hardening.js'));
+        }
+      }
+      if (hardening && hardening.runHardeningSuite) {
+        window.runHardeningSuite = hardening.runHardeningSuite;
+        console.log('[Tesseract Init] live-browser-hardening suite loaded successfully.');
+      }
+    } catch (hErr) {
+      console.error('[Tesseract Init] Could not load live-browser-hardening:', hErr);
+    }
+
+    try {
+      let complexHardening;
+      try {
+        complexHardening = require('../dist/testing/complex-web-hardening.js');
+      } catch (e1) {
+        try {
+          complexHardening = require('./dist/testing/complex-web-hardening.js');
+        } catch (e2) {
+          complexHardening = require(require('path').join(process.cwd(), 'apps/desktop-browser/dist/testing/complex-web-hardening.js'));
+        }
+      }
+      if (complexHardening && complexHardening.runComplexHardeningSuite) {
+        window.runComplexHardeningSuite = complexHardening.runComplexHardeningSuite;
+        console.log('[Tesseract Init] complex-web-hardening suite loaded successfully.');
+      }
+    } catch (cErr) {
+      console.error('[Tesseract Init] Could not load complex-web-hardening:', cErr);
+    }
+
+    try {
+      let voiceDiagnostic;
+      try {
+        voiceDiagnostic = require('../dist/testing/voice-llm-diagnostic.js');
+      } catch (e1) {
+        try {
+          voiceDiagnostic = require('./dist/testing/voice-llm-diagnostic.js');
+        } catch (e2) {
+          voiceDiagnostic = require(require('path').join(process.cwd(), 'apps/desktop-browser/dist/testing/voice-llm-diagnostic.js'));
+        }
+      }
+      if (voiceDiagnostic && voiceDiagnostic.runVoiceLlmDiagnosticSuite) {
+        window.runVoiceLlmDiagnosticSuite = voiceDiagnostic.runVoiceLlmDiagnosticSuite;
+        console.log('[Tesseract Init] voice-llm-diagnostic suite loaded successfully.');
+      }
+    } catch (vErr) {
+      console.error('[Tesseract Init] Could not load voice-llm-diagnostic:', vErr);
+    }
+
+    try {
+      let latencyBench;
+      try {
+        latencyBench = require('../dist/testing/latency-benchmark.js');
+      } catch (e1) {
+        try {
+          latencyBench = require('./dist/testing/latency-benchmark.js');
+        } catch (e2) {
+          latencyBench = require(require('path').join(process.cwd(), 'apps/desktop-browser/dist/testing/latency-benchmark.js'));
+        }
+      }
+      if (latencyBench && latencyBench.runLatencyBenchmarkSuite) {
+        window.runLatencyBenchmarkSuite = latencyBench.runLatencyBenchmarkSuite;
+        console.log('[Tesseract Init] latency-benchmark suite loaded successfully.');
+      }
+    } catch (lbErr) {
+      console.error('[Tesseract Init] Could not load latency-benchmark:', lbErr);
+    }
+
     // ═══════════════════════════════════════════════════════════
     // TAB MANAGEMENT & PER-SESSION CONVERSATIONAL MEMORY
     // ═══════════════════════════════════════════════════════════
@@ -1468,7 +1544,13 @@
 
     function navigateWebview(targetUrl) {
       let url = targetUrl.trim();
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      if (
+        !url.startsWith('http://') &&
+        !url.startsWith('https://') &&
+        !url.startsWith('data:') &&
+        !url.startsWith('file://') &&
+        !url.startsWith('about:')
+      ) {
         url = `https://${url}`;
       }
       hideStartPage();
@@ -1834,19 +1916,20 @@
               star.classList.add('listening');
             }
           }
-        } else if (state.status === 'planning' || state.status === 'executing' || state.status === 'verifying') {
+        } else if (state.status === 'thinking' || state.status === 'planning' || state.status === 'executing' || state.status === 'verifying') {
           aiPill.classList.remove('hidden');
-          aiPillLabel.textContent = state.currentStep || state.task || 'Agent working...';
+          const stagePrefix = state.status === 'thinking' ? '🧠 ' : (state.status === 'planning' ? '📋 ' : '⚡ ');
+          aiPillLabel.textContent = `${stagePrefix}${state.currentStep || state.currentAction || state.goal || 'Agent working...'}`;
           if (aiPillProgress) aiPillProgress.style.width = `${Math.round(state.progress * 100)}%`;
-          if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status} | Step: ${state.currentStep || '—'} | Progress: ${Math.round(state.progress * 100)}%`;
+          if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status.toUpperCase()} | Step: ${state.currentStep || state.currentAction || '—'} | Progress: ${Math.round(state.progress * 100)}%`;
           if (star) {
             star.classList.remove('listening', 'recording', 'completed');
-            star.classList.add(state.status === 'planning' ? 'thinking' : 'executing');
+            star.classList.add(state.status === 'thinking' || state.status === 'planning' ? 'thinking' : 'executing');
           }
-        } else if (state.status === 'completed') {
-          aiPillLabel.textContent = '✓ Done';
+        } else if (state.status === 'completed' || state.status === 'success') {
+          aiPillLabel.textContent = state.latencySummary ? `✓ Done (${state.latencySummary.split('| Total: ')[1] || 'Done'})` : '✓ Done';
           if (aiPillProgress) aiPillProgress.style.width = '100%';
-          if (hudExecVal) hudExecVal.textContent = `Agent: Done | ${state.result || 'Task finished'}`;
+          if (hudExecVal) hudExecVal.textContent = state.latencySummary ? `Agent: ${state.latencySummary}` : `Agent: Done | ${state.currentAction || 'Task finished'}`;
           if (star) {
             star.classList.remove('executing', 'thinking', 'recording');
             star.classList.add('completed');
@@ -1859,11 +1942,11 @@
           }
         } else if (state.status === 'cancelled' || state.status === 'error') {
           aiPillLabel.textContent = state.status === 'cancelled' ? 'Stopped' : '⚠ Action error';
-          if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status} | ${state.error || ''}`;
+          if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status} | ${state.error || state.currentAction || ''}`;
         }
 
-        if (flyoutTitle && state.task) {
-          flyoutTitle.textContent = `Task: "${state.task}"`;
+        if (flyoutTitle && (state.goal || state.task)) {
+          flyoutTitle.textContent = `Task: "${state.goal || state.task}"`;
         }
       });
     }

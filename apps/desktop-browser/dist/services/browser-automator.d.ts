@@ -77,5 +77,46 @@ export declare class BrowserAutomator {
         description?: string;
         recommendations?: string[];
     }>>;
+    /**
+     * Hover over an element.
+     */
+    hover(options: {
+        selector?: string;
+        elementId?: string;
+    }): Promise<AutomatorResult>;
+    /**
+     * Select an option from a <select> dropdown element.
+     */
+    selectOption(options: {
+        selector?: string;
+        elementId?: string;
+        value: string;
+    }): Promise<AutomatorResult>;
+    /**
+     * Press key with optional modifiers.
+     */
+    pressKey(key: string, modifiers?: {
+        ctrl?: boolean;
+        shift?: boolean;
+        alt?: boolean;
+        meta?: boolean;
+    }): Promise<AutomatorResult>;
+    /**
+     * Switch active tab by tabId.
+     */
+    switchTab(tabId: string): Promise<AutomatorResult>;
+    /**
+     * List open browser tabs.
+     */
+    listTabs(): Promise<AutomatorResult<Array<{
+        id: string;
+        url: string;
+        title: string;
+        active: boolean;
+    }>>>;
+    /**
+     * Verify whether an element matching a selector or condition exists.
+     */
+    verifyElement(selector: string, timeoutMs?: number): Promise<boolean>;
 }
 //# sourceMappingURL=browser-automator.d.ts.map

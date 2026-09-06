@@ -53,7 +53,10 @@ class VoiceManager {
     // Audio accumulators
     commandAudioChunks = [];
     totalCommandSamples = 0;
+    preRollChunks = [];
+    preRollSamples = 0;
     maxCommandDurationTimer = null;
+    isStandbyMode = false;
     // VAD & Timing guards
     wakeGraceUntil = 0;
     hasDetectedUserSpeech = false;
@@ -208,6 +211,9 @@ class VoiceManager {
             this.transitionTo('RESETTING');
         }
     }
+    setMuted(muted) {
+        this.isMuted = muted;
+    }
     isWakeWordEnabled() {
         return this.isWakeWordActive;
     }
@@ -230,6 +236,14 @@ class VoiceManager {
             case 'WAKE_LISTENING':
                 if (this.isWakeWordActive) {
                     this.wakeDetector.processChunk(pcm16k);
+                    // Maintain rolling 350ms pre-roll buffer (~5600 samples at 16kHz)
+                    this.preRollChunks.push(pcm16k);
+                    this.preRollSamples += pcm16k.length;
+                    while (this.preRollSamples > 5600 && this.preRollChunks.length > 1) {
+                        const popped = this.preRollChunks.shift();
+                        if (popped)
+                            this.preRollSamples -= popped.length;
+                    }
                 }
                 break;
             case 'COMMAND_LISTENING':
@@ -244,8 +258,15 @@ class VoiceManager {
                 this.vad.processChunk(pcm16k);
                 break;
             case 'SPEAKING':
-                // Microphone audio during TTS is ignored to prevent self-interruption from speaker playback.
-                // Users can interrupt anytime via Escape key, push-to-talk hotkey, or clicking the mic.
+                // Microphone audio during TTS is actively monitored for vocal barge-in.
+                // If user speaks loudly over TTS (RMS > 0.035), interrupt speech and task immediately.
+                if (rms >= 0.035) {
+                    console.log(`[VoiceManager] Vocal barge-in detected (RMS: ${rms.toFixed(4)}) during SPEAKING! Interrupting speech...`);
+                    if (typeof window !== 'undefined' && window.speechSynthesis) {
+                        window.speechSynthesis.cancel();
+                    }
+                    this.triggerInterruption();
+                }
                 break;
             default:
                 break;
@@ -253,9 +274,11 @@ class VoiceManager {
     }
     handleWakeDetected(result) {
         console.log(`[VoiceManager] Instant Wake Triggered (${result.phrase})`);
-        // Prepare command recording buffer
-        this.commandAudioChunks = [];
-        this.totalCommandSamples = 0;
+        // Prepare command recording buffer seeded with recent pre-roll audio so command onset is preserved
+        this.commandAudioChunks = [...this.preRollChunks];
+        this.totalCommandSamples = this.preRollSamples;
+        this.preRollChunks = [];
+        this.preRollSamples = 0;
         this.hasDetectedUserSpeech = false;
         this.vad.reset();
         // 1.2s grace window allows user to begin command without premature silence cutoff
@@ -307,9 +330,9 @@ class VoiceManager {
         }
         if (this.currentState !== 'COMMAND_LISTENING')
             return;
-        // Reject audio if duration is < 0.3s (4800 samples at 16kHz)
-        if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 4800) {
-            console.log(`[VoiceManager] Captured audio too short (${this.totalCommandSamples} samples < 4800), discarding.`);
+        // Reject audio if duration is < 0.15s (2400 samples at 16kHz)
+        if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 2400) {
+            console.log(`[VoiceManager] Captured audio too short (${this.totalCommandSamples} samples < 2400), discarding.`);
             this.resetToWakeListening();
             return;
         }
@@ -333,7 +356,7 @@ class VoiceManager {
         }
         const avgRms = Math.sqrt(sumSq / fullBuffer.length);
         // Only skip Whisper if buffer is absolute silence / empty noise
-        const hasVoiceEnergy = this.hasDetectedUserSpeech || maxAmp >= 0.015 || avgRms >= 0.002;
+        const hasVoiceEnergy = this.hasDetectedUserSpeech || maxAmp >= 0.008 || avgRms >= 0.001;
         if (!hasVoiceEnergy) {
             console.log(`[VoiceManager] No command speech detected (hasSpeech: ${this.hasDetectedUserSpeech}, MaxAmp: ${maxAmp.toFixed(4)}, RMS: ${avgRms.toFixed(5)}), skipping Whisper.`);
             this.resetToWakeListening();
@@ -405,6 +428,16 @@ class VoiceManager {
     resetVoiceSession() {
         this.resetToWakeListening();
     }
+    setStandbyMode(enabled) {
+        this.isStandbyMode = enabled;
+        console.log(`[VoiceManager] Standby mode set to: ${enabled}`);
+        if (enabled && (this.currentState === 'WAKE_LISTENING' || this.currentState === 'RESETTING')) {
+            this.transitionTo('COMMAND_LISTENING', { detail: 'Standby mode active' });
+        }
+    }
+    isStandby() {
+        return this.isStandbyMode;
+    }
     resetToWakeListening() {
         if (this.maxCommandDurationTimer) {
             clearTimeout(this.maxCommandDurationTimer);
@@ -417,7 +450,12 @@ class VoiceManager {
         this.hasDetectedUserSpeech = false;
         this.transitionTo('RESETTING');
         setTimeout(() => {
-            this.transitionTo('WAKE_LISTENING');
+            if (this.isStandbyMode) {
+                this.transitionTo('COMMAND_LISTENING', { detail: 'Standby mode active' });
+            }
+            else {
+                this.transitionTo('WAKE_LISTENING');
+            }
         }, 120);
     }
     triggerInterruption() {

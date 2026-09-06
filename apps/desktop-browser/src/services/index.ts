@@ -47,4 +47,9 @@ export * from '../agent/task-recorder.js';
 export * from '../agent/task-checkpoint-manager.js';
 export * from '../agent/agent-runtime.js';
 export * from '../agent/planner.js';
+export * from '../agent/natural-language-interpreter.js';
+export * from '../agent/task-manager.js';
+export * from '../browser/pdf-reader.js';
+export * from '../skills/comparison-engine.js';
+export * from '../voice/tts-provider.js';
 

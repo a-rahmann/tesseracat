@@ -43,23 +43,38 @@ class BrowserPerception {
             const media = raw.media || [];
             const domHash = this.computeHash(raw.url, raw.title, elements.length);
             this.lastSnapshotHash = domHash;
+            const isPdfDocument = (raw.url || '').toLowerCase().endsWith('.pdf') || (raw.title || '').toLowerCase().includes('.pdf');
+            let screenshotBase64 = undefined;
+            if (raw.requiresVisualFallback) {
+                screenshotBase64 = (await this.captureScreenshot()) || undefined;
+            }
             return {
                 url: raw.url || webview.getURL() || '',
                 title: raw.title || webview.getTitle() || '',
                 elements,
                 media,
                 domHash,
+                hasLoginForm: Boolean(raw.hasLoginForm),
+                hasCaptcha: Boolean(raw.hasCaptcha),
+                captchaType: raw.captchaType,
+                hasPaymentForm: Boolean(raw.hasPaymentForm),
+                hasCanvasControls: Boolean(raw.hasCanvasControls),
+                requiresVisualFallback: Boolean(raw.requiresVisualFallback),
+                screenshotBase64,
+                isPdfDocument,
                 timestamp: Date.now(),
             };
         }
         catch (err) {
             console.error('[BrowserPerception] Snapshot extraction failed:', err);
+            const curUrl = webview.getURL() || '';
             return {
-                url: webview.getURL() || '',
+                url: curUrl,
                 title: webview.getTitle() || '',
                 elements: [],
                 media: [],
                 domHash: '',
+                isPdfDocument: curUrl.toLowerCase().endsWith('.pdf'),
                 timestamp: Date.now(),
             };
         }
@@ -148,6 +163,14 @@ class BrowserPerception {
             elements: snap.elements,
             formattedView,
             media,
+            hasLoginForm: Boolean(snap.hasLoginForm),
+            hasCaptcha: Boolean(snap.hasCaptcha),
+            captchaType: snap.captchaType,
+            hasPaymentForm: Boolean(snap.hasPaymentForm),
+            hasCanvasControls: Boolean(snap.hasCanvasControls),
+            requiresVisualFallback: Boolean(snap.requiresVisualFallback),
+            screenshotBase64: snap.screenshotBase64,
+            isPdfDocument: Boolean(snap.isPdfDocument),
             timestamp: snap.timestamp,
         };
     }

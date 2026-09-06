@@ -1,0 +1,187 @@
+[
+  {
+    "scenarioId": "BENCH-01",
+    "scenarioName": "Simple Standalone Navigation (\"Open YouTube\")",
+    "command": "Open YouTube",
+    "expectedType": "FAST_PATH",
+    "sttTargetMs": 1500,
+    "firstActionTargetMs": 500,
+    "measuredNluMs": 1,
+    "measuredPlanningMs": 0,
+    "measuredFirstActionMs": 1,
+    "measuredTotalMs": 10,
+    "timings": {
+      "sttMs": 0,
+      "nluMs": 1,
+      "planningMs": 0,
+      "firstActionMs": 1,
+      "navDispatchMs": 1,
+      "navigationWaitMs": 0,
+      "pageReadyMs": 0,
+      "ttsMs": 0,
+      "taskFinalizeMs": 5,
+      "totalMs": 6
+    },
+    "passed": true,
+    "notes": [
+      "NLU: 1ms (Deterministic fast-path router)",
+      "First Action: 1ms (Optimistic concurrent navigation & speech)",
+      "Target <500ms met: YES",
+      "Zero LLM roundtrips consumed. Non-blocking voice dispatched."
+    ]
+  },
+  {
+    "scenarioId": "BENCH-02",
+    "scenarioName": "Compound Pipelined (\"Open YouTube and search for Lose Yourself\")",
+    "command": "Open YouTube and search for Lose Yourself",
+    "expectedType": "COMPOUND_PIPELINED",
+    "sttTargetMs": 1500,
+    "firstActionTargetMs": 2000,
+    "measuredNluMs": 1,
+    "measuredPlanningMs": 0,
+    "measuredFirstActionMs": 1,
+    "measuredTotalMs": 3017,
+    "timings": {
+      "sttMs": 0,
+      "nluMs": 1,
+      "planningMs": 0,
+      "firstActionMs": 1,
+      "navDispatchMs": 1,
+      "navigationWaitMs": 0,
+      "pageReadyMs": 0,
+      "ttsMs": 0,
+      "taskFinalizeMs": 5,
+      "totalMs": 6
+    },
+    "passed": true,
+    "notes": [
+      "NLU / Intent resolution: 1ms",
+      "First Action: 1ms (Pipelined YouTube navigation)",
+      "Target <2000ms met: YES",
+      "Non-truncation verified: Goal retained query \"Lose Yourself\""
+    ]
+  },
+  {
+    "scenarioId": "BENCH-03",
+    "scenarioName": "Compound Social Mission & Truncation Defense",
+    "command": "Open Instagram and check whether Rahul messaged me",
+    "expectedType": "AGENT_MISSION",
+    "sttTargetMs": 1500,
+    "firstActionTargetMs": 5000,
+    "measuredNluMs": 1,
+    "measuredPlanningMs": 0,
+    "measuredFirstActionMs": 1,
+    "measuredTotalMs": 3004,
+    "timings": {
+      "sttMs": 0,
+      "nluMs": 1,
+      "planningMs": 0,
+      "firstActionMs": 1,
+      "navDispatchMs": 1,
+      "navigationWaitMs": 0,
+      "pageReadyMs": 0,
+      "ttsMs": 0,
+      "taskFinalizeMs": 5,
+      "totalMs": 6
+    },
+    "passed": true,
+    "notes": [
+      "Fast-path single navigation properly REJECTED: YES (Defended)",
+      "NLU latency: 1ms (Single-pass semantic synthesis)",
+      "First browser action: 1ms",
+      "Target <5000ms met: YES",
+      "Compound context preserved for autonomous agent."
+    ]
+  },
+  {
+    "scenarioId": "BENCH-04",
+    "scenarioName": "Cross-Site Shopping Comparison Plan",
+    "command": "Find the cheapest Sony WH-1000XM5 across multiple sites",
+    "expectedType": "AGENT_MISSION",
+    "sttTargetMs": 1500,
+    "firstActionTargetMs": 5000,
+    "measuredNluMs": 1,
+    "measuredPlanningMs": 0,
+    "measuredFirstActionMs": 1,
+    "measuredTotalMs": 3034,
+    "timings": {
+      "sttMs": 0,
+      "nluMs": 1,
+      "planningMs": 0,
+      "firstActionMs": 1,
+      "navDispatchMs": 1,
+      "navigationWaitMs": 0,
+      "pageReadyMs": 0,
+      "ttsMs": 0,
+      "taskFinalizeMs": 5,
+      "totalMs": 6
+    },
+    "passed": true,
+    "notes": [
+      "Single-pass NLU + initial plan synthesis: 1ms",
+      "First Action (Amazon Search): 1ms",
+      "Target <5000ms met: YES"
+    ]
+  },
+  {
+    "scenarioId": "BENCH-05",
+    "scenarioName": "Deterministic Browser Micro-Controls (Scroll, Back, Reload)",
+    "command": "Scroll down / Go back / Reload",
+    "expectedType": "FAST_PATH",
+    "sttTargetMs": 1500,
+    "firstActionTargetMs": 300,
+    "measuredNluMs": 1,
+    "measuredPlanningMs": 0,
+    "measuredFirstActionMs": 1,
+    "measuredTotalMs": 1,
+    "timings": {
+      "sttMs": 0,
+      "nluMs": 0,
+      "planningMs": 0,
+      "firstActionMs": 1,
+      "navDispatchMs": 1,
+      "navigationWaitMs": 0,
+      "pageReadyMs": 0,
+      "ttsMs": 0,
+      "taskFinalizeMs": 0,
+      "totalMs": 1
+    },
+    "passed": true,
+    "notes": [
+      "Max browser action latency across 3 micro-controls: 1ms",
+      "Target <300ms met: YES",
+      "Zero LLM roundtrips, zero DOM perception serialization overhead."
+    ]
+  },
+  {
+    "scenarioId": "BENCH-06",
+    "scenarioName": "Fast Coherence Gate (\"and you open and surround\")",
+    "command": "and you open and surround",
+    "expectedType": "COHERENCE_REJECTION",
+    "sttTargetMs": 1500,
+    "firstActionTargetMs": 100,
+    "measuredNluMs": 3,
+    "measuredPlanningMs": 0,
+    "measuredFirstActionMs": 0,
+    "measuredTotalMs": 3,
+    "timings": {
+      "sttMs": 0,
+      "nluMs": 3,
+      "planningMs": 0,
+      "firstActionMs": 0,
+      "navDispatchMs": 0,
+      "navigationWaitMs": 0,
+      "pageReadyMs": 0,
+      "ttsMs": 0,
+      "taskFinalizeMs": 0,
+      "totalMs": 3
+    },
+    "passed": true,
+    "notes": [
+      "Coherence gate decision latency: 3ms",
+      "Utterance safely rejected as incoherent: YES",
+      "Browser action blocked: YES (Zero unintended side-effects)",
+      "Target <100ms met: YES"
+    ]
+  }
+]

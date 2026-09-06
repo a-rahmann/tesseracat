@@ -64,4 +64,9 @@ __exportStar(require("../agent/task-recorder.js"), exports);
 __exportStar(require("../agent/task-checkpoint-manager.js"), exports);
 __exportStar(require("../agent/agent-runtime.js"), exports);
 __exportStar(require("../agent/planner.js"), exports);
+__exportStar(require("../agent/natural-language-interpreter.js"), exports);
+__exportStar(require("../agent/task-manager.js"), exports);
+__exportStar(require("../browser/pdf-reader.js"), exports);
+__exportStar(require("../skills/comparison-engine.js"), exports);
+__exportStar(require("../voice/tts-provider.js"), exports);
 //# sourceMappingURL=index.js.map

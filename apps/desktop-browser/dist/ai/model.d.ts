@@ -11,6 +11,9 @@ export interface ModelGenerateOptions {
     maxTokens?: number;
     stopSequences?: string[];
     systemPrompt?: string;
+    timeoutMs?: number;
+    format?: 'json' | object;
+    jsonSchema?: object;
 }
 export interface ModelStreamCallbacks {
     onToken: (token: string) => void;
