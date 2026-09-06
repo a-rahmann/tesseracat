@@ -5,6 +5,7 @@ export * from './intent-engine.js';
 export * from './user-memory.js';
 export * from './tab-session-manager.js';
 export * from './dom-agent.js';
+export * from './omnibox-suggestions.js';
 
 // Autonomous Local Browser Redesign Domain Modules
 export * from '../platform/index.js';

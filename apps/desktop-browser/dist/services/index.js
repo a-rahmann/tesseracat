@@ -22,6 +22,7 @@ __exportStar(require("./intent-engine.js"), exports);
 __exportStar(require("./user-memory.js"), exports);
 __exportStar(require("./tab-session-manager.js"), exports);
 __exportStar(require("./dom-agent.js"), exports);
+__exportStar(require("./omnibox-suggestions.js"), exports);
 // Autonomous Local Browser Redesign Domain Modules
 __exportStar(require("../platform/index.js"), exports);
 __exportStar(require("../ai/model.js"), exports);

@@ -5,6 +5,7 @@ export * from './intent-engine.js';
 export * from './user-memory.js';
 export * from './tab-session-manager.js';
 export * from './dom-agent.js';
+export * from './omnibox-suggestions.js';
 export * from '../platform/index.js';
 export * from '../ai/model.js';
 export * from '../ai/ollama-gemma.js';
