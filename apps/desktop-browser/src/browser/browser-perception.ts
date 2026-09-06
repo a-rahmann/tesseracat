@@ -138,21 +138,66 @@ export class BrowserPerception {
     return false;
   }
 
+  /**
+   * Formal browser observation returning structured screen state with numbered targets.
+   */
+  public async observe(): Promise<{
+    url: string;
+    title: string;
+    elements: SnapshotElement[];
+    formattedView: string;
+    media: VideoStateObservation;
+    timestamp: number;
+  }> {
+    const snap = await this.getSnapshot();
+    const media = await this.observeVideo();
+    const formattedView = AccessibilityTreeFormatter.toNumberedList(snap.elements);
+
+    return {
+      url: snap.url,
+      title: snap.title,
+      elements: snap.elements,
+      formattedView,
+      media,
+      timestamp: snap.timestamp,
+    };
+  }
+
+  /**
+   * Finds matching element by target query, role, index, or spatial hint ("right", "left").
+   */
   public async findMatchingElement(
     query?: string,
     targetType?: string,
-    ordinalIndex = 1
+    ordinalIndex = 1,
+    spatialHint?: 'left' | 'right' | 'top' | 'bottom'
   ): Promise<SnapshotElement | null> {
     const snap = await this.getSnapshot();
     const cleanQuery = (query || '').toLowerCase().trim();
 
     let candidates = snap.elements;
+
+    // Check direct index match (e.g. "click 2", "second one")
+    const numericMatch = cleanQuery.match(/^(?:#|item\s*|result\s*|number\s*)?(\d+)$/i);
+    if (numericMatch) {
+      const idx = parseInt(numericMatch[1], 10);
+      const direct = candidates.find(el => el.index === idx);
+      if (direct) return direct;
+    }
+
     if (targetType) {
       const roleMatched = candidates.filter(el => el.role === targetType);
       if (roleMatched.length > 0) candidates = roleMatched;
     }
 
-    if (cleanQuery) {
+    if (spatialHint) {
+      if (spatialHint === 'right') candidates = candidates.filter(el => el.spatial?.isRightHalf);
+      else if (spatialHint === 'left') candidates = candidates.filter(el => el.spatial?.isLeftHalf);
+      else if (spatialHint === 'top') candidates = candidates.filter(el => el.spatial?.isTopHalf);
+      else if (spatialHint === 'bottom') candidates = candidates.filter(el => el.spatial?.isBottomHalf);
+    }
+
+    if (cleanQuery && !numericMatch) {
       const textMatched = candidates.filter(el => {
         const name = (el.name || '').toLowerCase();
         const text = (el.text || '').toLowerCase();

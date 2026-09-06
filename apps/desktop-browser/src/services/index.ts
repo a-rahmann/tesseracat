@@ -6,6 +6,7 @@ export * from './user-memory.js';
 export * from './tab-session-manager.js';
 export * from './dom-agent.js';
 export * from './omnibox-suggestions.js';
+export * from './omnibox-engine.js';
 
 // Autonomous Local Browser Redesign Domain Modules
 export * from '../platform/index.js';
@@ -22,6 +23,15 @@ export * from '../browser/media.js';
 export { ConversationManager } from '../memory/conversation-manager.js';
 export * from '../memory/context-manager.js';
 export * from '../memory/memory-retriever.js';
+export * from '../memory/browser-state-store.js';
+export * from '../memory/temporal-memory.js';
+export * from '../skills/skill-base.js';
+export * from '../skills/research-skill.js';
+export * from '../skills/shopping-skill.js';
+export * from '../skills/media-skill.js';
+export * from '../skills/forms-skill.js';
+export * from '../skills/navigation-skill.js';
+export * from '../skills/skill-registry.js';
 export * from '../adapters/youtube.js';
 export * from '../adapters/instagram.js';
 export * from '../adapters/gmail.js';
@@ -33,6 +43,8 @@ export * from '../agent/cancellation.js';
 export * from '../agent/fast-path.js';
 export * from '../agent/tool-registry.js';
 export * from '../agent/action-loop.js';
+export * from '../agent/task-recorder.js';
+export * from '../agent/task-checkpoint-manager.js';
 export * from '../agent/agent-runtime.js';
 export * from '../agent/planner.js';
 

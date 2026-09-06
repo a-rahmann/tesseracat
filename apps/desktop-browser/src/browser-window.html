@@ -1248,8 +1248,8 @@
 
   <script>
     const path = require('path');
-    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore, TabSessionManager, AgentRuntime, OmniboxSuggestionService;
-    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null, tabSessionManager = null, agentRuntime = null, omniboxSuggestions = null;
+    let VoiceManager, BrowserAutomator, AIExecutionCoordinator, IntentEngine, UserMemoryStore, TabSessionManager, AgentRuntime, OmniboxSuggestionService, OmniboxEngine, BrowserStateStore, TemporalMemory;
+    let voiceManager = null, automator = null, aiCoordinator = null, intentEngine = null, userMemory = null, tabSessionManager = null, agentRuntime = null, omniboxSuggestions = null, omniboxEngine = null, browserStateStore = null, temporalMemory = null;
 
     try {
       const services = require(path.join(__dirname, '../dist/services/index.js'));
@@ -1261,6 +1261,9 @@
       TabSessionManager = services.TabSessionManager;
       AgentRuntime = services.AgentRuntime;
       OmniboxSuggestionService = services.OmniboxSuggestionService;
+      OmniboxEngine = services.OmniboxEngine;
+      BrowserStateStore = services.BrowserStateStore;
+      TemporalMemory = services.TemporalMemory;
 
       if (VoiceManager) voiceManager = VoiceManager.getInstance();
       if (BrowserAutomator) automator = BrowserAutomator.getInstance();
@@ -1269,7 +1272,15 @@
       if (UserMemoryStore) userMemory = UserMemoryStore.getInstance();
       if (TabSessionManager) tabSessionManager = TabSessionManager.getInstance();
       if (AgentRuntime) agentRuntime = AgentRuntime.getInstance();
-      if (OmniboxSuggestionService) omniboxSuggestions = OmniboxSuggestionService.getInstance();
+      if (BrowserStateStore) browserStateStore = BrowserStateStore.getInstance();
+      if (TemporalMemory) temporalMemory = TemporalMemory.getInstance();
+
+      if (OmniboxEngine) {
+        omniboxEngine = OmniboxEngine.getInstance();
+        omniboxSuggestions = omniboxEngine;
+      } else if (OmniboxSuggestionService) {
+        omniboxSuggestions = OmniboxSuggestionService.getInstance();
+      }
     } catch (err) {
       console.error('[Tesseract Init] Error loading compiled services from dist/services/index.js:', err);
     }
@@ -1307,6 +1318,13 @@
         });
         container.appendChild(div);
       });
+
+      if (omniboxEngine) {
+        omniboxEngine.setOpenTabs(tabs.map(t => ({ id: t.id, title: t.title, url: t.url })));
+      }
+      if (browserStateStore) {
+        browserStateStore.setTabs(tabs.map(t => ({ id: t.id, title: t.title, url: t.url, active: t.id === activeTabId })));
+      }
     }
 
     function createNewTab(url = 'about:blank') {
@@ -1395,6 +1413,9 @@
       activeTabId = id;
       (window).activeTabId = id;
       const tab = tabs.find(t => t.id === id);
+      if (browserStateStore && tab) {
+        browserStateStore.setActiveTab(tab.id);
+      }
       renderTabs();
 
       if (tab) {
@@ -1534,6 +1555,15 @@
         }
         updateOmnibarDisplay(e.url);
         if (intentEngine) intentEngine.updateCurrentUrl(e.url);
+        if (omniboxEngine && e.url && !e.url.startsWith('about:')) {
+          omniboxEngine.recordVisit(e.url, webviewEl.getTitle?.() || e.url);
+        }
+        if (browserStateStore && e.url) {
+          browserStateStore.updateActiveTab({ id: activeTabId, url: e.url, title: webviewEl.getTitle?.() || e.url });
+        }
+        if (temporalMemory && e.url && !e.url.startsWith('about:')) {
+          temporalMemory.recordVisit({ url: e.url, title: webviewEl.getTitle?.() || e.url });
+        }
       });
 
       webviewEl.addEventListener('page-title-updated', (e) => {
@@ -1541,6 +1571,15 @@
         if (active) {
           active.title = e.title;
           renderTabs();
+          if (omniboxEngine && active.url && !active.url.startsWith('about:')) {
+            omniboxEngine.recordVisit(active.url, e.title);
+          }
+          if (browserStateStore && active.url) {
+            browserStateStore.updateActiveTab({ id: activeTabId, url: active.url, title: e.title });
+          }
+          if (temporalMemory && active.url && !active.url.startsWith('about:')) {
+            temporalMemory.recordVisit({ url: active.url, title: e.title });
+          }
         }
       });
 
@@ -1752,6 +1791,52 @@
               <span>${escapeHtml(s.description)}</span>
             </div>
           `).join('');
+        }
+      });
+    }
+
+    if (agentRuntime) {
+      agentRuntime.subscribe((state) => {
+        if (!aiPill || !aiPillLabel) return;
+        const star = document.getElementById('omnibar-star');
+        if (state.status === 'idle') {
+          if (!aiCoordinator || aiCoordinator.getState?.().status === 'idle') {
+            aiPill.classList.add('hidden');
+            if (star && !star.classList.contains('recording')) {
+              star.classList.remove('executing', 'thinking', 'completed');
+              star.classList.add('listening');
+            }
+          }
+        } else if (state.status === 'planning' || state.status === 'executing' || state.status === 'verifying') {
+          aiPill.classList.remove('hidden');
+          aiPillLabel.textContent = state.currentStep || state.task || 'Agent working...';
+          if (aiPillProgress) aiPillProgress.style.width = `${Math.round(state.progress * 100)}%`;
+          if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status} | Step: ${state.currentStep || '—'} | Progress: ${Math.round(state.progress * 100)}%`;
+          if (star) {
+            star.classList.remove('listening', 'recording', 'completed');
+            star.classList.add(state.status === 'planning' ? 'thinking' : 'executing');
+          }
+        } else if (state.status === 'completed') {
+          aiPillLabel.textContent = '✓ Done';
+          if (aiPillProgress) aiPillProgress.style.width = '100%';
+          if (hudExecVal) hudExecVal.textContent = `Agent: Done | ${state.result || 'Task finished'}`;
+          if (star) {
+            star.classList.remove('executing', 'thinking', 'recording');
+            star.classList.add('completed');
+            setTimeout(() => {
+              if (star.classList.contains('completed')) {
+                star.classList.remove('completed');
+                star.classList.add('listening');
+              }
+            }, 2500);
+          }
+        } else if (state.status === 'cancelled' || state.status === 'error') {
+          aiPillLabel.textContent = state.status === 'cancelled' ? 'Stopped' : '⚠ Action error';
+          if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status} | ${state.error || ''}`;
+        }
+
+        if (flyoutTitle && state.task) {
+          flyoutTitle.textContent = `Task: "${state.task}"`;
         }
       });
     }

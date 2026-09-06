@@ -1,1 +1,1 @@
-{"version":3,"file":"accessibility-tree.d.ts","sourceRoot":"","sources":["../../src/browser/accessibility-tree.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,eAAO,MAAM,4BAA4B,+pFAsFxC,CAAC;AAEF,qBAAa,0BAA0B;WACvB,eAAe,CAAC,QAAQ,EAAE,GAAG,EAAE,GAAG,MAAM;CAYvD"}
+{"version":3,"file":"accessibility-tree.d.ts","sourceRoot":"","sources":["../../src/browser/accessibility-tree.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,eAAO,MAAM,4BAA4B,+7GAgHxC,CAAC;AAEF,qBAAa,0BAA0B;WACvB,eAAe,CAAC,QAAQ,EAAE,GAAG,EAAE,GAAG,MAAM;WAexC,cAAc,CAAC,QAAQ,EAAE,GAAG,EAAE,GAAG,MAAM;CAGtD"}

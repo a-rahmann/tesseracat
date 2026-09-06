@@ -17,6 +17,10 @@ const youtube_js_1 = require("../adapters/youtube.js");
 const browser_automator_js_1 = require("../browser/browser-automator.js");
 const browser_perception_js_1 = require("../browser/browser-perception.js");
 const media_controller_js_1 = require("../browser/media-controller.js");
+const skill_registry_js_1 = require("../skills/skill-registry.js");
+const task_recorder_js_1 = require("./task-recorder.js");
+const task_checkpoint_manager_js_1 = require("./task-checkpoint-manager.js");
+const temporal_memory_js_1 = require("../memory/temporal-memory.js");
 class AgentRuntime {
     static instance = null;
     voiceManager;
@@ -110,13 +114,89 @@ class AgentRuntime {
         console.log(`[AgentRuntime] Received command: "${goal}"`);
         const convManager = conversation_manager_js_1.ConversationManager.getInstance();
         convManager.recordTurn({ speaker: 'user', text: goal });
-        // 1. CLASSIFY THROUGH ACTION TAXONOMY (NEVER DEFAULT TO GOOGLE)
+        const cleanLower = goal.toLowerCase();
+        // 0a. Voice Interruption: "Stop", "Wait", "Actually don't do that", "Cancel"
+        if (/^(?:stop|wait|cancel|abort|pause\s+task|actually\s+(?:don't|stop)|never\s*mind)\b/i.test(cleanLower)) {
+            this.cancelActiveTask();
+            task_recorder_js_1.TaskRecorder.getInstance().cancelTask();
+            this.updateState({ status: 'idle', currentAction: 'Cancelled', progress: 1.0 });
+            await this.speak('Task cancelled.');
+            this.voiceManager.resetToWakeListening();
+            return;
+        }
+        // 0b. Status Queries: "What are you doing?"
+        if (/what\s+(?:are\s+you\s+doing|is\s+the\s+status|are\s+you\s+working\s+on)/i.test(cleanLower)) {
+            const explanation = task_recorder_js_1.TaskRecorder.getInstance().explainCurrentActivity();
+            await this.speak(explanation);
+            this.voiceManager.resetToWakeListening();
+            return;
+        }
+        // 0c. Action Log Queries: "What did you do?"
+        if (/what\s+(?:did\s+you\s+do|have\s+you\s+done)/i.test(cleanLower)) {
+            const past = task_recorder_js_1.TaskRecorder.getInstance().explainPastActivity();
+            await this.speak(past);
+            this.voiceManager.resetToWakeListening();
+            return;
+        }
+        // 0d. Checkpoint Resumption: "Continue what I was doing"
+        if (/continue\s+what\s+(?:i|we)\s+was\s+doing|resume(?:\s+task)?/i.test(cleanLower)) {
+            const cp = task_checkpoint_manager_js_1.TaskCheckpointManager.getInstance().getLatestCheckpoint();
+            if (cp) {
+                await this.speak(`Resuming: "${cp.goal}".`);
+                return this.handleUserCommand(cp.goal);
+            }
+            else {
+                await this.speak("I don't have any unfinished task checkpoints saved.");
+                this.voiceManager.resetToWakeListening();
+                return;
+            }
+        }
+        // 0e. Temporal Memory Query: "What did Rahul say earlier?", "What did we talk about four minutes ago?"
+        if (/what\s+(?:did|was|were)|remember\s+what|four\s+minutes\s+ago|earlier\s+in/i.test(cleanLower) && !cleanLower.includes('video')) {
+            const temporal = temporal_memory_js_1.TemporalMemory.getInstance().parseAndQuery(goal);
+            if (temporal.records.length > 0) {
+                await this.speak(temporal.explanation);
+                this.voiceManager.resetToWakeListening();
+                return;
+            }
+        }
+        // Begin Recording Task
+        task_recorder_js_1.TaskRecorder.getInstance().startTask(goal);
+        this.currentCancellationToken = new cancellation_js_1.CancellationToken();
+        // 1. REUSABLE SKILLS DISPATCH (Research, Shopping, Media, Forms, Navigation)
+        const perception = browser_perception_js_1.BrowserPerception.getInstance();
+        const snapshot = await perception.getSnapshot();
+        const skillResult = await skill_registry_js_1.SkillRegistry.getInstance().dispatch(goal, {
+            activeUrl: snapshot.url,
+            activeTitle: snapshot.title,
+            perception,
+            token: this.currentCancellationToken,
+            speak: (text) => this.speak(text),
+            updateStatus: (status) => this.updateState({ status: 'executing', currentAction: status, progress: 0.6 }),
+        });
+        if (skillResult) {
+            for (const action of skillResult.actionsTaken) {
+                task_recorder_js_1.TaskRecorder.getInstance().recordAction(action);
+            }
+            task_recorder_js_1.TaskRecorder.getInstance().completeTask(skillResult.summary);
+            this.updateState({
+                status: skillResult.success ? 'success' : 'error',
+                currentAction: skillResult.summary,
+                progress: 1.0,
+            });
+            convManager.recordTurn({ speaker: 'assistant', text: skillResult.summary });
+            this.voiceManager.resetToWakeListening();
+            return;
+        }
+        // 2. CLASSIFY THROUGH ACTION TAXONOMY (NEVER DEFAULT TO GOOGLE)
         const routed = command_router_js_1.CommandRouter.route(goal);
         console.log(`[AgentRuntime] Routed: Action=${routed.action}, Target=${routed.target || '—'}, Location=${routed.location}, Query="${routed.query || '—'}"`);
-        // 2. FAST-PATH EXECUTION (Deterministic <5ms)
+        // 3. FAST-PATH EXECUTION (Deterministic <5ms)
         if (routed.isFastPath) {
             this.updateState({ status: 'executing', currentAction: `Executing ${routed.action}...`, progress: 0.5 });
             await this.executeFastPath(routed);
+            task_recorder_js_1.TaskRecorder.getInstance().recordAction(`Executed fast path ${routed.action}`);
+            task_recorder_js_1.TaskRecorder.getInstance().completeTask(`Completed ${routed.action}`);
             this.updateState({ status: 'success', currentAction: 'Done', progress: 1.0 });
             this.voiceManager.resetToWakeListening();
             return;

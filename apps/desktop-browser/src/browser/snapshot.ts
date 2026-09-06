@@ -4,6 +4,7 @@
 
 export interface SnapshotElement {
   id: string; // Temporary ID e.g. "e1", "e2"
+  index?: number; // 1-indexed number e.g. [1], [2]
   role: 'button' | 'link' | 'textbox' | 'checkbox' | 'menu' | 'dialog' | 'heading' | 'video' | 'item' | 'generic';
   name: string; // ARIA label or inner accessible name
   text: string; // Visible text snippet
@@ -11,6 +12,18 @@ export interface SnapshotElement {
   disabled?: boolean;
   visible: boolean;
   selector?: string; // Selector for execution
+  spatial?: {
+    isLeftHalf: boolean;
+    isRightHalf: boolean;
+    isTopHalf: boolean;
+    isBottomHalf: boolean;
+  };
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 export interface VideoMetadata {

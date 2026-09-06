@@ -33,7 +33,21 @@ export declare class BrowserPerception {
      * Waits for URL or DOM hash to change.
      */
     waitForPageChange(timeoutMs?: number): Promise<boolean>;
-    findMatchingElement(query?: string, targetType?: string, ordinalIndex?: number): Promise<SnapshotElement | null>;
+    /**
+     * Formal browser observation returning structured screen state with numbered targets.
+     */
+    observe(): Promise<{
+        url: string;
+        title: string;
+        elements: SnapshotElement[];
+        formattedView: string;
+        media: VideoStateObservation;
+        timestamp: number;
+    }>;
+    /**
+     * Finds matching element by target query, role, index, or spatial hint ("right", "left").
+     */
+    findMatchingElement(query?: string, targetType?: string, ordinalIndex?: number, spatialHint?: 'left' | 'right' | 'top' | 'bottom'): Promise<SnapshotElement | null>;
     private computeHash;
 }
 //# sourceMappingURL=browser-perception.d.ts.map

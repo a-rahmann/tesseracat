@@ -3,6 +3,7 @@
  */
 export interface SnapshotElement {
     id: string;
+    index?: number;
     role: 'button' | 'link' | 'textbox' | 'checkbox' | 'menu' | 'dialog' | 'heading' | 'video' | 'item' | 'generic';
     name: string;
     text: string;
@@ -10,6 +11,18 @@ export interface SnapshotElement {
     disabled?: boolean;
     visible: boolean;
     selector?: string;
+    spatial?: {
+        isLeftHalf: boolean;
+        isRightHalf: boolean;
+        isTopHalf: boolean;
+        isBottomHalf: boolean;
+    };
+    boundingBox?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
 }
 export interface VideoMetadata {
     title?: string;
