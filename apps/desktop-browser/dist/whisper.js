@@ -67,21 +67,42 @@ async function transcribeAudioBuffer(audioFloat32) {
         console.log('[Whisper] Rejected: audio is ambient background noise (Max < 0.01, RMS < 0.002)');
         return '';
     }
-    const transcriber = await getTranscriber();
-    // Normalize amplitude so intentional speech is cleanly scaled without amplifying noise
-    if (maxAmp >= 0.015 && maxAmp < 0.7) {
-        const scale = 0.85 / maxAmp;
-        for (let i = 0; i < sampleCount; i++) {
-            audioFloat32[i] *= scale;
+    // Trim leading and trailing silence to eliminate padding hallucinations and speed up inference
+    let speechStart = 0;
+    for (let i = 0; i < sampleCount; i++) {
+        if (Math.abs(audioFloat32[i]) >= 0.008) {
+            speechStart = Math.max(0, i - 2400); // 150ms pre-roll
+            break;
         }
     }
+    let speechEnd = sampleCount;
+    for (let i = sampleCount - 1; i >= speechStart; i--) {
+        if (Math.abs(audioFloat32[i]) >= 0.008) {
+            speechEnd = Math.min(sampleCount, i + 3200); // 200ms post-roll
+            break;
+        }
+    }
+    const activeAudio = audioFloat32.slice(speechStart, speechEnd);
+    console.log(`[Whisper] Active speech segment: ${activeAudio.length} samples (~${(activeAudio.length / 16000).toFixed(2)}s, trimmed ${speechStart} leading samples)`);
+    if (activeAudio.length < 4800) {
+        console.log('[Whisper] Rejected: trimmed active speech too short (< 0.3s)');
+        return '';
+    }
+    // Gentle normalization to protect SNR without amplifying background hiss
+    if (maxAmp < 0.25 && maxAmp >= 0.01) {
+        const scale = Math.min(2.5, 0.45 / maxAmp);
+        for (let i = 0; i < activeAudio.length; i++) {
+            activeAudio[i] *= scale;
+        }
+    }
+    const transcriber = await getTranscriber();
     console.log('[Whisper] Inference started...');
     const t0 = Date.now();
-    // Pass max_new_tokens: 40 and temperature: 0.0 for fastest deterministic decoding on CPU
-    const output = await transcriber(audioFloat32, {
+    const output = await transcriber(activeAudio, {
+        chunk_length_s: 30,
+        stride_length_s: 5,
+        language: 'en',
         task: 'transcribe',
-        max_new_tokens: 40,
-        temperature: 0.0,
         return_timestamps: false,
     });
     const elapsedMs = Date.now() - t0;

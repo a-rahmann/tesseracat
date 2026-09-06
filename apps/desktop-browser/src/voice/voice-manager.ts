@@ -104,8 +104,8 @@ export class VoiceManager {
     this.capture = new AudioCapture();
     this.wakeDetector = new WakeWordDetector({
       enabled: true,
-      threshold: 0.65,
-      debounceMs: 1200,
+      threshold: 0.88,
+      debounceMs: 2500,
     });
     this.vad = new VoiceActivityDetector({
       trailingSilenceMs: 950,
@@ -309,7 +309,6 @@ export class VoiceManager {
 
   private handleWakeDetected(result: WakeDetectionResult): void {
     console.log(`[VoiceManager] Instant Wake Triggered (${result.phrase})`);
-    this.transitionTo('WAKE_DETECTED', { detail: result.phrase });
 
     // Prepare command recording buffer
     this.commandAudioChunks = [];
@@ -320,27 +319,17 @@ export class VoiceManager {
     // 1.5s grace window allows user to take a breath and begin command
     this.wakeGraceUntil = Date.now() + 1500;
 
-    // If user continued speaking command in the same breath, append trailing audio
-    if (result.trailingAudio && result.trailingAudio.length > 0) {
-      this.commandAudioChunks.push(result.trailingAudio);
-      this.totalCommandSamples += result.trailingAudio.length;
-    }
+    // Immediately enter COMMAND_LISTENING to prevent dropping the first syllables of user's command
+    this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
 
-    // Move smoothly to COMMAND_LISTENING
-    setTimeout(() => {
-      if (this.currentState === 'WAKE_DETECTED') {
-        this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
-
-        // Safety timeout (8.5 seconds max command)
-        if (this.maxCommandDurationTimer) clearTimeout(this.maxCommandDurationTimer);
-        this.maxCommandDurationTimer = setTimeout(() => {
-          if (this.currentState === 'COMMAND_LISTENING') {
-            console.log('[VoiceManager] Max command duration reached.');
-            this.finishCommandRecording();
-          }
-        }, 8500);
+    // Safety timeout (8.5 seconds max command)
+    if (this.maxCommandDurationTimer) clearTimeout(this.maxCommandDurationTimer);
+    this.maxCommandDurationTimer = setTimeout(() => {
+      if (this.currentState === 'COMMAND_LISTENING') {
+        console.log('[VoiceManager] Max command duration reached.');
+        this.finishCommandRecording();
       }
-    }, 120);
+    }, 8500);
   }
 
   public startPushToTalk(): void {
@@ -403,8 +392,8 @@ export class VoiceManager {
     }
     const avgRms = Math.sqrt(sumSq / fullBuffer.length);
 
-    if (maxAmp < 0.01 && avgRms < 0.0025) {
-      console.log(`[VoiceManager] Audio buffer is dead silence (Max: ${maxAmp.toFixed(4)}, RMS: ${avgRms.toFixed(5)}), skipping Whisper.`);
+    if (!this.hasDetectedUserSpeech || maxAmp < 0.02) {
+      console.log(`[VoiceManager] No command speech detected (hasSpeech: ${this.hasDetectedUserSpeech}, MaxAmp: ${maxAmp.toFixed(4)}), skipping Whisper.`);
       this.resetToWakeListening();
       return;
     }

@@ -35,7 +35,11 @@ export class AudioCapture {
       });
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      this.audioContext = new AudioCtx();
+      try {
+        this.audioContext = new AudioCtx({ sampleRate: 16000 });
+      } catch {
+        this.audioContext = new AudioCtx();
+      }
 
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();

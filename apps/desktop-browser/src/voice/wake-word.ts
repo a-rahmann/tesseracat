@@ -102,7 +102,7 @@ export class WakeWordDetector {
     }
     const highFreqRatio = highFreqEnergy / (sumSq + 1e-6);
 
-    const speechThreshold = Math.max(0.012, this.baselineRms * 1.9);
+    const speechThreshold = Math.max(0.016, this.baselineRms * 2.2);
 
     if (!this.isTrackingUtterance) {
       // Background noise floor smoothing
@@ -114,7 +114,7 @@ export class WakeWordDetector {
         this.preRollIndex = (this.preRollIndex + 1) % this.preRollSamples;
       }
 
-      // Detect speech onset
+      // Detect speech onset for intentional wake word
       if (rms > speechThreshold) {
         this.isTrackingUtterance = true;
         this.silenceFramesCount = 0;
@@ -140,33 +140,33 @@ export class WakeWordDetector {
       const elapsedMs = (this.totalUtteranceSamples / this.sampleRate) * 1000;
 
       // Track the 4 phonetic stages of "Hey / Hi" + "Tess" + "er" + "act"
-      // Stage 1: "Hey" / "Hi" (Voiced vowel: strong RMS, low-moderate ZCR < 0.22)
+      // Stage 1: "Hey" / "Hi" (Voiced vowel: strong RMS, low ZCR < 0.22)
       if (!this.phoneticStages[0] && elapsedMs < 450) {
-        if (rms > speechThreshold * 1.5 && zcr < 0.25) {
+        if (rms > speechThreshold * 1.6 && zcr < 0.22) {
           this.phoneticStages[0] = true;
           this.stageTimings[0] = elapsedMs;
         }
       }
 
-      // Stage 2: "Tess" (/t/ transient + /s/ fricative: high ZCR > 0.28, strong highFreqRatio > 0.4)
-      if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 180 && elapsedMs < 850) {
-        if (zcr > 0.25 && highFreqRatio > 0.35) {
+      // Stage 2: "Tess" (/t/ transient + /s/ fricative: high ZCR > 0.32, strong highFreqRatio > 0.42)
+      if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 200 && elapsedMs < 850) {
+        if (zcr > 0.30 && highFreqRatio > 0.40) {
           this.phoneticStages[1] = true;
           this.stageTimings[1] = elapsedMs;
         }
       }
 
       // Stage 3: "er" (Vocalic dip: moderate RMS, dip in ZCR)
-      if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 350 && elapsedMs < 1150) {
-        if (zcr < 0.26 && rms > speechThreshold) {
+      if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 380 && elapsedMs < 1150) {
+        if (zcr < 0.25 && rms > speechThreshold) {
           this.phoneticStages[2] = true;
           this.stageTimings[2] = elapsedMs;
         }
       }
 
       // Stage 4: "act" (/k/ + /t/ release: sharp high-frequency transient)
-      if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 450 && elapsedMs < 1400) {
-        if (zcr > 0.24 && highFreqRatio > 0.3) {
+      if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 550 && elapsedMs < 1500) {
+        if (zcr > 0.26 && highFreqRatio > 0.36) {
           this.phoneticStages[3] = true;
           this.stageTimings[3] = elapsedMs;
         }
@@ -179,36 +179,34 @@ export class WakeWordDetector {
         this.silenceFramesCount = Math.max(0, this.silenceFramesCount - 1);
       }
 
-      // Evaluate detection criteria when phrase has completed or silence is encountered
-      const isCandidateDuration = elapsedMs >= 480 && elapsedMs <= 2200;
-      const hasSilencePause = this.silenceFramesCount >= 6; // ~190ms trailing silence
-      const allPhoneticsPassed = this.phoneticStages[0] && this.phoneticStages[1] && this.phoneticStages[2] && this.phoneticStages[3];
-      const threePhoneticsPassed = (this.phoneticStages[0] ? 1 : 0) + (this.phoneticStages[1] ? 1 : 0) + (this.phoneticStages[2] ? 1 : 0) + (this.phoneticStages[3] ? 1 : 0) >= 3;
+      // Evaluate detection criteria: ALL 4 phonetic stages MUST be passed in sequential order
+      const isCandidateDuration = elapsedMs >= 600 && elapsedMs <= 1800;
+      const isSequential = this.stageTimings[0] < this.stageTimings[1] &&
+                           this.stageTimings[1] < this.stageTimings[2] &&
+                           this.stageTimings[2] < this.stageTimings[3];
+      const allPhoneticsPassed = this.phoneticStages[0] &&
+                                 this.phoneticStages[1] &&
+                                 this.phoneticStages[2] &&
+                                 this.phoneticStages[3] &&
+                                 isSequential;
 
       const now = Date.now();
       const isDebounced = now - this.lastTriggerTime > this.debounceMs;
 
-      if (isDebounced && isCandidateDuration && (allPhoneticsPassed || (threePhoneticsPassed && hasSilencePause))) {
+      if (isDebounced && isCandidateDuration && allPhoneticsPassed) {
         // Assemble audio buffer
         const fullAudio = this.flattenChunks();
-        const score = allPhoneticsPassed ? 0.95 : 0.82;
+        const score = 0.94;
 
         if (score >= this.threshold) {
           this.lastTriggerTime = now;
-          console.log(`[Wake Word] Instant Wake Detected (Score: ${score.toFixed(2)}, Latency: <${Math.round((this.silenceFramesCount * chunk.length / 16))}ms)`);
-
-          // Split wake word and trailing command audio if user spoke without pause
-          // e.g. "Hey Tesseract, open YouTube"
-          let wakeCutoff = Math.min(fullAudio.length, Math.round(1.1 * this.sampleRate));
-          const wakeAudio = fullAudio.slice(0, wakeCutoff);
-          const trailingAudio = fullAudio.length > wakeCutoff ? fullAudio.slice(wakeCutoff) : undefined;
+          console.log(`[Wake Word] Verified Wake Detected (Score: ${score.toFixed(2)}, Duration: ${Math.round(elapsedMs)}ms)`);
 
           if (this.onWakeCallback) {
             this.onWakeCallback({
               score,
               phrase: 'Hey Tesseract',
-              wakeAudio,
-              trailingAudio,
+              wakeAudio: fullAudio,
             });
           }
 

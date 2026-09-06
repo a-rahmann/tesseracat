@@ -7,7 +7,8 @@ export const PCM_WORKLET_CODE = `
 class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.buffer = new Float32Array(512);
+    // 768 is 6 * 128 (Web Audio frame quantum) and exactly divisible by 3 (48kHz -> 16kHz decimation: 256 samples)
+    this.buffer = new Float32Array(768);
     this.bufferIndex = 0;
   }
 
@@ -18,7 +19,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
       if (channelData && channelData.length > 0) {
         for (let i = 0; i < channelData.length; i++) {
           this.buffer[this.bufferIndex++] = channelData[i];
-          if (this.bufferIndex >= 512) {
+          if (this.bufferIndex >= 768) {
             this.port.postMessage(this.buffer.slice());
             this.bufferIndex = 0;
           }
