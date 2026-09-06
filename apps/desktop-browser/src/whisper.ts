@@ -108,13 +108,18 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   console.log('[Whisper] Inference started...');
   const t0 = Date.now();
 
-  const output = await transcriber(activeAudio, {
-    chunk_length_s: 30,
-    stride_length_s: 5,
+  const transcriberOptions: any = {
     language: 'en',
     task: 'transcribe',
     return_timestamps: false,
-  });
+  };
+
+  if (activeAudio.length > 20 * 16000) {
+    transcriberOptions.chunk_length_s = 30;
+    transcriberOptions.stride_length_s = 5;
+  }
+
+  const output = await transcriber(activeAudio, transcriberOptions);
 
   const elapsedMs = Date.now() - t0;
   console.log(`[Whisper] Inference finished in ${elapsedMs}ms. Raw output:`, output);
