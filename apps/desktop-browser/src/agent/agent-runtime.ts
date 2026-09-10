@@ -30,6 +30,7 @@ import { WebSpeechTTSProvider } from '../voice/tts-provider.js';
 import { AgentGoal, PlanStep } from './types.js';
 import { PerformanceProfiler } from './performance-profiler.js';
 import { LearnedRulesStore } from '../memory/learned-rules-store.js';
+import { TaskMacroCache } from '../memory/task-macro-cache.js';
 
 export interface AgentTaskState {
   status: 'idle' | 'thinking' | 'planning' | 'executing' | 'speaking' | 'success' | 'error';
@@ -566,10 +567,18 @@ Give a concise 2-sentence spoken response answering their question based on actu
       }
 
       let steps: PlanStep[];
-      if (interpreted.initialPlan && interpreted.initialPlan.length > 0) {
+      const cachedMacro = TaskMacroCache.getInstance().findSimilarMacro(interpreted.goal, snapshot.url);
+
+      if (cachedMacro && cachedMacro.steps && cachedMacro.steps.length > 0) {
+        profiler.markPlanning();
+        console.log(`[AgentRuntime] Reusing learned task macro for "${interpreted.goal}" (${cachedMacro.steps.length} steps, count=${cachedMacro.successCount}) - 0ms planning latency!`);
+        const { steps: cutSteps } = TaskMacroCache.getInstance().cutRedundantPreloadSteps(cachedMacro.steps, snapshot.url);
+        steps = cutSteps;
+      } else if (interpreted.initialPlan && interpreted.initialPlan.length > 0) {
         profiler.markPlanning();
         console.log(`[AgentRuntime] Reusing single-pass initial plan (${interpreted.initialPlan.length} steps) - skipped secondary Planner LLM round-trip!`);
-        steps = interpreted.initialPlan;
+        const { steps: cutSteps } = TaskMacroCache.getInstance().cutRedundantPreloadSteps(interpreted.initialPlan, snapshot.url);
+        steps = cutSteps;
       } else {
         const availableToolNames = ToolRegistry.getInstance().listToolNames();
         const plan = await Planner.getInstance().plan(interpreted, {
@@ -579,7 +588,8 @@ Give a concise 2-sentence spoken response answering their question based on actu
           availableTools: availableToolNames,
         });
         profiler.markPlanning();
-        steps = plan.steps;
+        const { steps: cutSteps } = TaskMacroCache.getInstance().cutRedundantPreloadSteps(plan.steps, snapshot.url);
+        steps = cutSteps;
       }
 
       console.log(`[AgentRuntime] Generated plan with ${steps.length} steps for "${interpreted.goal}"`);
@@ -715,6 +725,13 @@ Give a concise 2-sentence spoken response answering their question based on actu
         action: 'MISSION',
         resultSummary: result.summary,
       });
+
+      // Learn and persist task workflow for instant re-execution & step cutting
+      if (result.success && initialPlanSteps && initialPlanSteps.length > 0) {
+        const activeTab = BrowserStateStore.getInstance().getActiveTab();
+        const activeHost = activeTab?.url && !activeTab.url.startsWith('about:') ? new URL(activeTab.url).hostname.replace(/^www\./, '') : undefined;
+        TaskMacroCache.getInstance().recordTaskMacro(goal, initialPlanSteps, activeHost);
+      }
     } catch (err: any) {
       console.error('[AgentRuntime] Mission error:', err);
       const profiler = PerformanceProfiler.getInstance();

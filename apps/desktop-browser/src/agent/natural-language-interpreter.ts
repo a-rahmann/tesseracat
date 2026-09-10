@@ -10,6 +10,7 @@ import { OllamaGemmaModel } from '../ai/ollama-gemma.js';
 import { ConversationManager } from '../memory/conversation-manager.js';
 import { ContextManager } from '../memory/context-manager.js';
 import { LearnedRulesStore } from '../memory/learned-rules-store.js';
+import { TaskMacroCache } from '../memory/task-macro-cache.js';
 import { BrowserStateStore } from '../memory/browser-state-store.js';
 
 export class NaturalLanguageInterpreter {
@@ -256,6 +257,34 @@ Output strictly valid JSON matching this schema:
         isCompound: false,
         isFastPath: true,
         spokenAcknowledgment: `Applying learned rule: ${applicableRules[0].correction}`,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // 0.5 CHECK PERSISTENT TASK MACRO CACHE (Sub-millisecond learned workflow replay & step cutting)
+    const cachedMacro = TaskMacroCache.getInstance().findSimilarMacro(cleanText, activeUrl);
+    if (cachedMacro && cachedMacro.steps && cachedMacro.steps.length > 0) {
+      console.log(`[NaturalLanguageInterpreter] Hit learned task macro: "${cachedMacro.goal}" (${cachedMacro.steps.length} steps)`);
+      const { steps: cutSteps } = TaskMacroCache.getInstance().cutRedundantPreloadSteps(cachedMacro.steps, activeUrl);
+      const isMedia = cachedMacro.intentCategory === 'MEDIA_CONTROL' ||
+        /\b(?:play|video|youtube|song|music|listen)\b/i.test(cleanText) ||
+        /\b(?:play|video|youtube|song|music|listen)\b/i.test(cachedMacro.goal);
+      const targetUrl = cachedMacro.suggestedTargetUrl || cachedMacro.steps.find(s => s.parameters?.url)?.parameters?.url;
+      const spoken = isMedia ? 'Opening YouTube and playing a video.' : `Working on: ${cleanText}`;
+
+      return {
+        rawUserText: cleanText,
+        goal: cleanText,
+        intentCategory: (cachedMacro.intentCategory as any) || (isMedia ? 'MEDIA_CONTROL' : 'GENERAL_AUTOMATION'),
+        entities: { domain: cachedMacro.domain },
+        requiresBrowser: true,
+        requiresPerception: true,
+        isCompound: cutSteps.length > 1,
+        isFastPath: false,
+        suggestedTargetUrl: targetUrl,
+        initialPlan: cutSteps,
+        spokenAcknowledgment: spoken,
         confidence: 1.0,
         isCoherent: true,
       };

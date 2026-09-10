@@ -56,9 +56,9 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   const rms = Math.sqrt(sumSq / sampleCount);
   console.log(`[Whisper] Received ${sampleCount} samples (~${durationSec.toFixed(2)}s) | Min: ${min.toFixed(4)}, Max: ${max.toFixed(4)}, RMS: ${rms.toFixed(5)}${nonFiniteCount > 0 ? ` (Fixed ${nonFiniteCount} non-finite samples)` : ''}`);
 
-  // Reject audio that is too short (< 0.4s / 6400 samples at 16kHz)
-  if (sampleCount < 6400) {
-    console.log('[Whisper] Rejected: audio too short (< 0.4s / 6400 samples)');
+  // Reject audio that is too short (< 0.15s / 2400 samples at 16kHz)
+  if (sampleCount < 2400) {
+    console.log('[Whisper] Rejected: audio too short (< 0.15s / 2400 samples)');
     return '';
   }
 
@@ -97,8 +97,8 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   const activeAudio = audioFloat32.slice(speechStart, speechEnd);
   console.log(`[Whisper] Active speech segment: ${activeAudio.length} samples (~${(activeAudio.length / 16000).toFixed(2)}s, trimmed ${speechStart} leading samples)`);
 
-  if (activeAudio.length < 1800) {
-    console.log('[Whisper] Rejected: trimmed active speech too short (< 0.11s)');
+  if (activeAudio.length < 1200) {
+    console.log('[Whisper] Rejected: trimmed active speech too short (< 0.075s)');
     return '';
   }
 

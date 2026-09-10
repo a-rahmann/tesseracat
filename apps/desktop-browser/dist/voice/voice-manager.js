@@ -72,8 +72,8 @@ class VoiceManager {
             debounceMs: 2500,
         });
         this.vad = new vad_js_1.VoiceActivityDetector({
-            trailingSilenceMs: 950,
-            minSpeechDurationMs: 200,
+            trailingSilenceMs: 1400,
+            minSpeechDurationMs: 180,
         });
         // Wake event handler (<300ms response)
         this.wakeDetector.onWakeDetected((result) => {
@@ -272,8 +272,46 @@ class VoiceManager {
                 break;
         }
     }
-    handleWakeDetected(result) {
-        console.log(`[VoiceManager] Instant Wake Triggered (${result.phrase})`);
+    async handleWakeDetected(result) {
+        console.log(`[VoiceManager] Acoustic wake candidate received (${result.phrase}), validating with ASR gate...`);
+        // Dual-gate ASR verification on wakeAudio: verify the user ACTUALLY said "Hey Tesseract"
+        if (result.wakeAudio && result.wakeAudio.length >= 3200) {
+            try {
+                const text = await whisper_js_1.WhisperBridge.transcribe(result.wakeAudio);
+                const clean = (text || '').toLowerCase().trim();
+                console.log(`[VoiceManager] Wake verification transcription: "${clean}"`);
+                // Check if transcription matches wake phrase variants
+                const isWakeMatch = /\b(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert)\b/i.test(clean);
+                if (!isWakeMatch) {
+                    console.log(`[VoiceManager] Wake candidate rejected by ASR gate ("${clean}" != wake word). Preventing phantom wake.`);
+                    this.wakeDetector.reset();
+                    return;
+                }
+                // Single-shot command detection: e.g. "Hey Tesseract, open youtube and play a video"
+                const singleShotRemainder = clean.replace(/^(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert)[,.]?\s*/i, '').trim();
+                if (singleShotRemainder.length >= 3) {
+                    console.log(`[VoiceManager] Single-shot wake + command detected: "${singleShotRemainder}". Executing immediately.`);
+                    this.transitionTo('EXECUTING', { detail: singleShotRemainder });
+                    for (const listener of this.transcriptionListeners) {
+                        try {
+                            listener(singleShotRemainder);
+                        }
+                        catch { }
+                    }
+                    for (const listener of this.commandListeners) {
+                        try {
+                            listener(singleShotRemainder);
+                        }
+                        catch { }
+                    }
+                    return;
+                }
+            }
+            catch (err) {
+                console.warn('[VoiceManager] Wake ASR verification error:', err);
+            }
+        }
+        console.log(`[VoiceManager] Verified Wake Confirmed! Listening for user command...`);
         // Prepare command recording buffer seeded with recent pre-roll audio so command onset is preserved
         this.commandAudioChunks = [...this.preRollChunks];
         this.totalCommandSamples = this.preRollSamples;
@@ -281,11 +319,11 @@ class VoiceManager {
         this.preRollSamples = 0;
         this.hasDetectedUserSpeech = false;
         this.vad.reset();
-        // 1.2s grace window allows user to begin command without premature silence cutoff
-        this.wakeGraceUntil = Date.now() + 1200;
+        // 1.8s grace window allows user to begin command without premature silence cutoff
+        this.wakeGraceUntil = Date.now() + 1800;
         // Immediately enter COMMAND_LISTENING to capture the user's command
         this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
-        // Safety timeout (8.5 seconds max command)
+        // Safety timeout (9.5 seconds max command)
         if (this.maxCommandDurationTimer)
             clearTimeout(this.maxCommandDurationTimer);
         this.maxCommandDurationTimer = setTimeout(() => {
@@ -293,7 +331,7 @@ class VoiceManager {
                 console.log('[VoiceManager] Max command duration reached.');
                 this.finishCommandRecording();
             }
-        }, 8500);
+        }, 9500);
     }
     async startPushToTalk() {
         if (!this.isAudioPipelineReady) {

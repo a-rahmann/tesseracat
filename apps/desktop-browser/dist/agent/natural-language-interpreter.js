@@ -10,6 +10,7 @@ const ollama_gemma_js_1 = require("../ai/ollama-gemma.js");
 const conversation_manager_js_1 = require("../memory/conversation-manager.js");
 const context_manager_js_1 = require("../memory/context-manager.js");
 const learned_rules_store_js_1 = require("../memory/learned-rules-store.js");
+const task_macro_cache_js_1 = require("../memory/task-macro-cache.js");
 const browser_state_store_js_1 = require("../memory/browser-state-store.js");
 class NaturalLanguageInterpreter {
     static instance = null;
@@ -228,6 +229,32 @@ Output strictly valid JSON matching this schema:
                 isCompound: false,
                 isFastPath: true,
                 spokenAcknowledgment: `Applying learned rule: ${applicableRules[0].correction}`,
+                confidence: 1.0,
+                isCoherent: true,
+            };
+        }
+        // 0.5 CHECK PERSISTENT TASK MACRO CACHE (Sub-millisecond learned workflow replay & step cutting)
+        const cachedMacro = task_macro_cache_js_1.TaskMacroCache.getInstance().findSimilarMacro(cleanText, activeUrl);
+        if (cachedMacro && cachedMacro.steps && cachedMacro.steps.length > 0) {
+            console.log(`[NaturalLanguageInterpreter] Hit learned task macro: "${cachedMacro.goal}" (${cachedMacro.steps.length} steps)`);
+            const { steps: cutSteps } = task_macro_cache_js_1.TaskMacroCache.getInstance().cutRedundantPreloadSteps(cachedMacro.steps, activeUrl);
+            const isMedia = cachedMacro.intentCategory === 'MEDIA_CONTROL' ||
+                /\b(?:play|video|youtube|song|music|listen)\b/i.test(cleanText) ||
+                /\b(?:play|video|youtube|song|music|listen)\b/i.test(cachedMacro.goal);
+            const targetUrl = cachedMacro.suggestedTargetUrl || cachedMacro.steps.find(s => s.parameters?.url)?.parameters?.url;
+            const spoken = isMedia ? 'Opening YouTube and playing a video.' : `Working on: ${cleanText}`;
+            return {
+                rawUserText: cleanText,
+                goal: cleanText,
+                intentCategory: cachedMacro.intentCategory || (isMedia ? 'MEDIA_CONTROL' : 'GENERAL_AUTOMATION'),
+                entities: { domain: cachedMacro.domain },
+                requiresBrowser: true,
+                requiresPerception: true,
+                isCompound: cutSteps.length > 1,
+                isFastPath: false,
+                suggestedTargetUrl: targetUrl,
+                initialPlan: cutSteps,
+                spokenAcknowledgment: spoken,
                 confidence: 1.0,
                 isCoherent: true,
             };

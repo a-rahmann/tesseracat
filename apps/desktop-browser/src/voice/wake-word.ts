@@ -102,7 +102,7 @@ export class WakeWordDetector {
     }
     const highFreqRatio = highFreqEnergy / (sumSq + 1e-6);
 
-    const speechThreshold = Math.max(0.016, this.baselineRms * 2.2);
+    const speechThreshold = Math.max(0.024, this.baselineRms * 2.5);
 
     if (!this.isTrackingUtterance) {
       // Background noise floor smoothing

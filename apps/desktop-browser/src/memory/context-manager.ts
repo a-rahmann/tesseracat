@@ -3,6 +3,7 @@
  */
 
 import { AgentGoal, PlanStep } from '../agent/types.js';
+import { TaskMacroCache } from './task-macro-cache.js';
 
 export interface ContextualEntities {
   activeUrl?: string;
@@ -118,30 +119,16 @@ export class ContextManager {
       };
     }
 
-    // 2. Redundant Preamble Pruning in Plans:
+    // 2. Redundant Preamble Pruning in Plans via TaskMacroCache:
     // e.g., if goal has initialPlan and Step 1 is navigating to a platform that is ALREADY loaded
     if (goal.initialPlan && goal.initialPlan.length > 1) {
-      const step1 = goal.initialPlan[0];
-      if (step1.toolName === 'browser.navigate' && step1.parameters?.url) {
-        try {
-          const targetHost = new URL(step1.parameters.url).hostname.replace(/^www\./, '');
-          const currentHost = activeUrl && !activeUrl.startsWith('about:') ? new URL(activeUrl).hostname.replace(/^www\./, '') : '';
-
-          if (targetHost && currentHost && (currentHost.includes(targetHost) || targetHost.includes(currentHost))) {
-            console.log(`[ChainMemory] Pruning redundant navigation to "${step1.parameters.url}" because active host is "${currentHost}".`);
-            // Prune step 1 and renumber remaining steps
-            const prunedSteps: PlanStep[] = goal.initialPlan.slice(1).map((s, idx) => ({
-              ...s,
-              stepNumber: idx + 1,
-            }));
-
-            return {
-              ...goal,
-              initialPlan: prunedSteps,
-              spokenAcknowledgment: goal.spokenAcknowledgment?.replace(/^(?:Opening|Navigating to)\s+[^,]+,\s*/i, ''),
-            };
-          }
-        } catch (_) {}
+      const { steps: prunedSteps, wasCut } = TaskMacroCache.getInstance().cutRedundantPreloadSteps(goal.initialPlan, activeUrl);
+      if (wasCut) {
+        return {
+          ...goal,
+          initialPlan: prunedSteps,
+          spokenAcknowledgment: goal.spokenAcknowledgment?.replace(/^(?:Opening|Navigating to)\s+[^,]+,\s*/i, ''),
+        };
       }
     }
 

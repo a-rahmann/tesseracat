@@ -4,6 +4,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ContextManager = void 0;
+const task_macro_cache_js_1 = require("./task-macro-cache.js");
 class ContextManager {
     static instance = null;
     currentContext = {};
@@ -93,29 +94,16 @@ class ContextManager {
                 confidence: 1.0,
             };
         }
-        // 2. Redundant Preamble Pruning in Plans:
+        // 2. Redundant Preamble Pruning in Plans via TaskMacroCache:
         // e.g., if goal has initialPlan and Step 1 is navigating to a platform that is ALREADY loaded
         if (goal.initialPlan && goal.initialPlan.length > 1) {
-            const step1 = goal.initialPlan[0];
-            if (step1.toolName === 'browser.navigate' && step1.parameters?.url) {
-                try {
-                    const targetHost = new URL(step1.parameters.url).hostname.replace(/^www\./, '');
-                    const currentHost = activeUrl && !activeUrl.startsWith('about:') ? new URL(activeUrl).hostname.replace(/^www\./, '') : '';
-                    if (targetHost && currentHost && (currentHost.includes(targetHost) || targetHost.includes(currentHost))) {
-                        console.log(`[ChainMemory] Pruning redundant navigation to "${step1.parameters.url}" because active host is "${currentHost}".`);
-                        // Prune step 1 and renumber remaining steps
-                        const prunedSteps = goal.initialPlan.slice(1).map((s, idx) => ({
-                            ...s,
-                            stepNumber: idx + 1,
-                        }));
-                        return {
-                            ...goal,
-                            initialPlan: prunedSteps,
-                            spokenAcknowledgment: goal.spokenAcknowledgment?.replace(/^(?:Opening|Navigating to)\s+[^,]+,\s*/i, ''),
-                        };
-                    }
-                }
-                catch (_) { }
+            const { steps: prunedSteps, wasCut } = task_macro_cache_js_1.TaskMacroCache.getInstance().cutRedundantPreloadSteps(goal.initialPlan, activeUrl);
+            if (wasCut) {
+                return {
+                    ...goal,
+                    initialPlan: prunedSteps,
+                    spokenAcknowledgment: goal.spokenAcknowledgment?.replace(/^(?:Opening|Navigating to)\s+[^,]+,\s*/i, ''),
+                };
             }
         }
         // 3. Search Deduplication / Chained Continuation:
