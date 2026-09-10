@@ -4,6 +4,7 @@ import { AgentOrchestrator } from '../../agent-runtime/dist/index.js';
 import { PolicyContext, TaskStep } from '../../../packages/core-types/dist/index.js';
 import { transcribeAudioBuffer, getTranscriber } from './whisper.js';
 import { OllamaSidecar } from './services/ollama-sidecar.js';
+import { AISidecarClient } from './sidecar/ai-sidecar-client.js';
 
 // Catch EPIPE on stdout/stderr in GUI mode
 process.stdout?.on('error', (err: any) => { if (err.code === 'EPIPE') return; });
@@ -19,8 +20,8 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 let mainWindow: BrowserWindow | null = null;
 const orchestrator = new AgentOrchestrator();
 
-// Pre-warm local Whisper model in background
-getTranscriber().catch(() => {});
+// Pre-warm out-of-process AI Engine Sidecar (Whisper STT off the main thread)
+AISidecarClient.getInstance().ensureRunning().catch(() => {});
 
 // Download history tracker
 const downloadHistory: Array<{ filename: string; savePath: string; totalBytes: number; status: string; date: string }> = [];
@@ -381,6 +382,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   OllamaSidecar.getInstance().stop();
+  AISidecarClient.getInstance().shutdown();
 });
 
 // IPC Handlers
@@ -403,7 +405,7 @@ ipcMain.handle('execute-agent-task', async (_event, { profileId = 'user-default'
   }
 });
 
-// Local Whisper Speech-to-Text IPC Handler
+// Out-of-process Whisper Speech-to-Text IPC Handler (delegated to separate AI Engine process)
 ipcMain.handle('whisper:transcribe', async (_event, audioPayload: any) => {
   try {
     let float32: Float32Array;
@@ -423,11 +425,21 @@ ipcMain.handle('whisper:transcribe', async (_event, audioPayload: any) => {
       return { success: false, error: 'Empty audio buffer' };
     }
 
-    // Yield control so any pending UI rendering and IPC events dispatch immediately
-    await new Promise(resolve => setImmediate(resolve));
+    // Delegate to out-of-process AI Engine Sidecar so Chromium UI remains at 60fps
+    try {
+      const sidecarRes = await AISidecarClient.getInstance().transcribe(float32);
+      if (sidecarRes && typeof sidecarRes.text === 'string') {
+        console.log(`[Whisper IPC via Sidecar] Transcribed: "${sidecarRes.text}" in ${sidecarRes.elapsedMs}ms (model: ${sidecarRes.model})`);
+        return { success: true, text: sidecarRes.text, elapsedMs: sidecarRes.elapsedMs, model: sidecarRes.model };
+      }
+    } catch (sidecarErr: any) {
+      console.warn('[Whisper IPC] Sidecar failed, falling back to in-process Whisper:', sidecarErr.message);
+    }
 
+    // In-process fallback
+    await new Promise(resolve => setImmediate(resolve));
     const text = await transcribeAudioBuffer(float32);
-    console.log(`[Whisper IPC] Returning text: "${text}"`);
+    console.log(`[Whisper IPC Fallback] Returning text: "${text}"`);
     return { success: true, text };
   } catch (err: any) {
     console.error('[Whisper IPC] Transcribe error:', err);

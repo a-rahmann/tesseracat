@@ -8,6 +8,7 @@ const path_1 = __importDefault(require("path"));
 const index_js_1 = require("../../agent-runtime/dist/index.js");
 const whisper_js_1 = require("./whisper.js");
 const ollama_sidecar_js_1 = require("./services/ollama-sidecar.js");
+const ai_sidecar_client_js_1 = require("./sidecar/ai-sidecar-client.js");
 // Catch EPIPE on stdout/stderr in GUI mode
 process.stdout?.on('error', (err) => { if (err.code === 'EPIPE')
     return; });
@@ -21,8 +22,8 @@ electron_1.app.commandLine.appendSwitch('disable-software-rasterizer');
 electron_1.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 let mainWindow = null;
 const orchestrator = new index_js_1.AgentOrchestrator();
-// Pre-warm local Whisper model in background
-(0, whisper_js_1.getTranscriber)().catch(() => { });
+// Pre-warm out-of-process AI Engine Sidecar (Whisper STT off the main thread)
+ai_sidecar_client_js_1.AISidecarClient.getInstance().ensureRunning().catch(() => { });
 // Download history tracker
 const downloadHistory = [];
 orchestrator.registerTool({
@@ -362,6 +363,7 @@ electron_1.app.on('window-all-closed', () => {
 });
 electron_1.app.on('before-quit', () => {
     ollama_sidecar_js_1.OllamaSidecar.getInstance().stop();
+    ai_sidecar_client_js_1.AISidecarClient.getInstance().shutdown();
 });
 // IPC Handlers
 electron_1.ipcMain.handle('execute-agent-task', async (_event, { profileId = 'user-default', goal = '', contextData = {} }) => {
@@ -381,7 +383,7 @@ electron_1.ipcMain.handle('execute-agent-task', async (_event, { profileId = 'us
         return { success: false, error: err.message };
     }
 });
-// Local Whisper Speech-to-Text IPC Handler
+// Out-of-process Whisper Speech-to-Text IPC Handler (delegated to separate AI Engine process)
 electron_1.ipcMain.handle('whisper:transcribe', async (_event, audioPayload) => {
     try {
         let float32;
@@ -403,10 +405,21 @@ electron_1.ipcMain.handle('whisper:transcribe', async (_event, audioPayload) => 
         if (!float32 || float32.length === 0) {
             return { success: false, error: 'Empty audio buffer' };
         }
-        // Yield control so any pending UI rendering and IPC events dispatch immediately
+        // Delegate to out-of-process AI Engine Sidecar so Chromium UI remains at 60fps
+        try {
+            const sidecarRes = await ai_sidecar_client_js_1.AISidecarClient.getInstance().transcribe(float32);
+            if (sidecarRes && typeof sidecarRes.text === 'string') {
+                console.log(`[Whisper IPC via Sidecar] Transcribed: "${sidecarRes.text}" in ${sidecarRes.elapsedMs}ms (model: ${sidecarRes.model})`);
+                return { success: true, text: sidecarRes.text, elapsedMs: sidecarRes.elapsedMs, model: sidecarRes.model };
+            }
+        }
+        catch (sidecarErr) {
+            console.warn('[Whisper IPC] Sidecar failed, falling back to in-process Whisper:', sidecarErr.message);
+        }
+        // In-process fallback
         await new Promise(resolve => setImmediate(resolve));
         const text = await (0, whisper_js_1.transcribeAudioBuffer)(float32);
-        console.log(`[Whisper IPC] Returning text: "${text}"`);
+        console.log(`[Whisper IPC Fallback] Returning text: "${text}"`);
         return { success: true, text };
     }
     catch (err) {

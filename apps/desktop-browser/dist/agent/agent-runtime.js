@@ -29,6 +29,7 @@ const tts_provider_js_1 = require("../voice/tts-provider.js");
 const performance_profiler_js_1 = require("./performance-profiler.js");
 const learned_rules_store_js_1 = require("../memory/learned-rules-store.js");
 const task_macro_cache_js_1 = require("../memory/task-macro-cache.js");
+const voice_grammar_corrector_js_1 = require("../voice/voice-grammar-corrector.js");
 class AgentRuntime {
     static instance = null;
     voiceManager;
@@ -336,6 +337,57 @@ class AgentRuntime {
                 this.speak(ackText).finally(() => profiler.markTtsEnd()).catch(() => { });
                 browser_automator_js_1.BrowserAutomator.getInstance().navigate(navUrl).catch(() => { });
             }
+            else if (fastPathGoal.fastPathAction === 'CORRECT_GRAMMAR') {
+                profiler.markFirstAction('Correct grammar');
+                const textToCorrect = fastPathGoal.entities?.text;
+                let correctedOutput = '';
+                if (textToCorrect) {
+                    const res = voice_grammar_corrector_js_1.VoiceGrammarCorrector.getInstance().correct(textToCorrect);
+                    correctedOutput = res.correctedText;
+                }
+                else {
+                    // Inspect focused element in active browser webview
+                    const automator = browser_automator_js_1.BrowserAutomator.getInstance();
+                    const focusedInfo = await automator.executeScript(`
+            (() => {
+              const el = document.activeElement;
+              if (!el) return { value: '', isInput: false };
+              if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                return { value: el.value || '', isInput: true };
+              }
+              if (el.isContentEditable) {
+                return { value: el.innerText || '', isInput: true };
+              }
+              return { value: '', isInput: false };
+            })()
+          `);
+                    if (focusedInfo && focusedInfo.isInput && focusedInfo.value) {
+                        const originalVal = focusedInfo.value;
+                        const res = voice_grammar_corrector_js_1.VoiceGrammarCorrector.getInstance().correct(originalVal);
+                        correctedOutput = res.correctedText;
+                        await automator.executeScript(`
+              (() => {
+                const el = document.activeElement;
+                if (!el) return;
+                const newText = ${JSON.stringify(correctedOutput)};
+                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                  el.value = newText;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                } else if (el.isContentEditable) {
+                  el.innerText = newText;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              })()
+            `);
+                    }
+                }
+                const ackText = correctedOutput
+                    ? `Grammar corrected: "${correctedOutput}"`
+                    : 'Checked grammar. No active text field or text provided to correct.';
+                profiler.markTtsStart(ackText);
+                this.speak(ackText).finally(() => profiler.markTtsEnd()).catch(() => { });
+            }
             else {
                 const routed = {
                     action: fastPathGoal.fastPathAction,
@@ -415,11 +467,53 @@ class AgentRuntime {
             this.voiceManager.resetToWakeListening();
             return;
         }
+        // 2.5 PIPELINED SPECULATIVE NAVIGATION (Don't make the browser wait for everything)
+        // If the utterance specifies an explicit destination platform (e.g. "open Instagram and check Rahul's messages"),
+        // dispatch the browser navigation IMMEDIATELY in parallel so the page loads while Gemma 3 4B reasons about the remaining subtasks.
+        const SPECULATIVE_PLATFORM_URLS = {
+            instagram: 'https://www.instagram.com',
+            youtube: 'https://www.youtube.com',
+            google: 'https://www.google.com',
+            amazon: 'https://www.amazon.com',
+            github: 'https://www.github.com',
+            reddit: 'https://www.reddit.com',
+            wikipedia: 'https://www.wikipedia.org',
+            twitter: 'https://www.x.com',
+            x: 'https://www.x.com',
+            spotify: 'https://open.spotify.com',
+            netflix: 'https://www.netflix.com',
+            gmail: 'https://mail.google.com',
+            chatgpt: 'https://chatgpt.com',
+            claude: 'https://claude.ai',
+            linkedin: 'https://www.linkedin.com',
+            tiktok: 'https://www.tiktok.com',
+            twitch: 'https://www.twitch.tv',
+            ebay: 'https://www.ebay.com',
+            walmart: 'https://www.walmart.com',
+        };
+        const specNavMatch = cleanLower.match(/^(?:open|go\s+to|visit|navigate\s+to)\s+(instagram|youtube|google|amazon|github|reddit|wikipedia|twitter|x|spotify|netflix|gmail|chatgpt|claude|linkedin|tiktok|twitch|ebay|walmart)\b/i);
+        let speculativeNavPromise = null;
+        if (specNavMatch) {
+            const platformKey = specNavMatch[1].toLowerCase();
+            const targetPlatformUrl = SPECULATIVE_PLATFORM_URLS[platformKey];
+            if (targetPlatformUrl && !snapshot.url.startsWith(targetPlatformUrl)) {
+                console.log(`[AgentRuntime] Pipelined speculative navigation: loading ${targetPlatformUrl} in parallel while LLM reasons`);
+                this.updateState({ currentAction: `Opening ${platformKey.toUpperCase()}...` });
+                profiler.markFirstAction(`Speculative nav ${platformKey}`);
+                speculativeNavPromise = browser_automator_js_1.BrowserAutomator.getInstance().navigate(targetPlatformUrl).catch((err) => {
+                    console.warn('[AgentRuntime] Speculative nav note:', err);
+                });
+            }
+        }
         // 3. Grounded NLU Interpretation (Local Gemma 3 4B)
         this.updateState({ status: 'thinking', currentAction: 'Understanding command...', currentStep: 'Interpreting Intent' });
         const interpreted = await natural_language_interpreter_js_1.NaturalLanguageInterpreter.getInstance().interpret(goal, snapshot.url, snapshot.title);
         profiler.markNlu(Boolean(interpreted.isFastPath), Boolean(interpreted.isCompound));
         console.log(`[AgentRuntime] NLU Result: category=${interpreted.intentCategory}, compound=${interpreted.isCompound}, goal="${interpreted.goal}"`);
+        // Await speculative navigation if in-flight so page is ready for subsequent steps
+        if (speculativeNavPromise) {
+            await speculativeNavPromise;
+        }
         // COHERENCE & CONFIDENCE GATE:
         // Low-confidence, incoherent, or ambiguous transcriptions must NEVER launch arbitrary agent missions.
         if (interpreted.isCoherent === false || interpreted.isUncertain || interpreted.confidence < 0.6) {

@@ -18,6 +18,7 @@ import { resampleTo16k } from '../audio/resampler.js';
 import { WakeWordDetector, WakeDetectionResult } from './wake-word.js';
 import { VoiceActivityDetector } from './vad.js';
 import { WhisperBridge } from './whisper.js';
+import { VoiceGrammarCorrector } from './voice-grammar-corrector.js';
 
 export type VoiceStateName =
   | 'WAKE_LISTENING'
@@ -44,6 +45,7 @@ export interface VoiceState {
   rms: number;
   detail?: string;
   transcription?: string;
+  rawTranscription?: string;
   error?: string;
 }
 
@@ -481,12 +483,19 @@ export class VoiceManager {
         return;
       }
 
-      this.transitionTo('THINKING', { transcription });
+      // Google-Style Generalized Voice Grammar & Acoustic Correction (<1ms)
+      const grammarRes = VoiceGrammarCorrector.getInstance().correct(transcription);
+      const finalCommand = grammarRes.wasModified ? grammarRes.correctedText : transcription;
+      if (grammarRes.wasModified) {
+        console.log(`[VoiceManager] Voice grammar auto-corrected: "${transcription}" -> "${finalCommand}" (${grammarRes.explanation})`);
+      }
+
+      this.transitionTo('THINKING', { transcription: finalCommand, rawTranscription: transcription });
 
       // Notify UI transcription listeners
       for (const listener of this.transcriptionListeners) {
         try {
-          listener(transcription);
+          listener(finalCommand);
         } catch (err) {
           console.error('[Transcription Listener Error]', err);
         }
@@ -495,7 +504,7 @@ export class VoiceManager {
       // Dispatch to command listeners (e.g. AgentRuntime)
       for (const listener of this.commandListeners) {
         try {
-          await listener(transcription);
+          await listener(finalCommand);
         } catch (err) {
           console.error('[Command Listener Error]', err);
         }

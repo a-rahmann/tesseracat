@@ -20,6 +20,7 @@ const resampler_js_1 = require("../audio/resampler.js");
 const wake_word_js_1 = require("./wake-word.js");
 const vad_js_1 = require("./vad.js");
 const whisper_js_1 = require("./whisper.js");
+const voice_grammar_corrector_js_1 = require("./voice-grammar-corrector.js");
 function mapStateToStatus(stateName) {
     switch (stateName) {
         case 'WAKE_LISTENING':
@@ -405,11 +406,17 @@ class VoiceManager {
                 this.resetToWakeListening();
                 return;
             }
-            this.transitionTo('THINKING', { transcription });
+            // Google-Style Generalized Voice Grammar & Acoustic Correction (<1ms)
+            const grammarRes = voice_grammar_corrector_js_1.VoiceGrammarCorrector.getInstance().correct(transcription);
+            const finalCommand = grammarRes.wasModified ? grammarRes.correctedText : transcription;
+            if (grammarRes.wasModified) {
+                console.log(`[VoiceManager] Voice grammar auto-corrected: "${transcription}" -> "${finalCommand}" (${grammarRes.explanation})`);
+            }
+            this.transitionTo('THINKING', { transcription: finalCommand, rawTranscription: transcription });
             // Notify UI transcription listeners
             for (const listener of this.transcriptionListeners) {
                 try {
-                    listener(transcription);
+                    listener(finalCommand);
                 }
                 catch (err) {
                     console.error('[Transcription Listener Error]', err);
@@ -418,7 +425,7 @@ class VoiceManager {
             // Dispatch to command listeners (e.g. AgentRuntime)
             for (const listener of this.commandListeners) {
                 try {
-                    await listener(transcription);
+                    await listener(finalCommand);
                 }
                 catch (err) {
                     console.error('[Command Listener Error]', err);

@@ -12,6 +12,7 @@ import { ContextManager } from '../memory/context-manager.js';
 import { LearnedRulesStore } from '../memory/learned-rules-store.js';
 import { TaskMacroCache } from '../memory/task-macro-cache.js';
 import { BrowserStateStore } from '../memory/browser-state-store.js';
+import { VoiceGrammarCorrector } from '../voice/voice-grammar-corrector.js';
 
 export class NaturalLanguageInterpreter {
   private static instance: NaturalLanguageInterpreter | null = null;
@@ -291,6 +292,27 @@ Output strictly valid JSON matching this schema:
         suggestedTargetUrl: targetUrl,
         initialPlan: cutSteps,
         spokenAcknowledgment: spoken,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // 0.8 EXPLICIT VOICE GRAMMAR CORRECTION INTENT
+    // e.g. "correct grammar", "fix grammar", "fix the grammar", "check grammar: <text>", "fix my grammar"
+    const grammarMatch = cleanText.match(/^(?:correct\s+(?:the\s+|my\s+)?grammar|fix\s+(?:the\s+|my\s+)?grammar|check\s+(?:the\s+|my\s+)?grammar)(?:\s*(?:on|in|of|for|:)?\s*(.*))?$/i);
+    if (grammarMatch) {
+      const targetText = grammarMatch[1]?.trim() || '';
+      return {
+        rawUserText: cleanText,
+        goal: targetText ? `Correct grammar: "${targetText}"` : 'Correct grammar in active input',
+        intentCategory: 'GENERAL_AUTOMATION',
+        fastPathAction: 'CORRECT_GRAMMAR',
+        entities: { text: targetText },
+        requiresBrowser: !targetText,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        spokenAcknowledgment: targetText ? 'Correcting grammar now.' : 'Checking grammar in active text field.',
         confidence: 1.0,
         isCoherent: true,
       };
@@ -1139,74 +1161,11 @@ Output strictly valid JSON matching this schema:
    * e.g. "open youtube and video. Bye." -> "open youtube and play a random video"
    */
   public fuzzyAutoCorrect(text: string): { corrected: string; wasRepaired: boolean; reason?: string } {
-    let s = text.trim();
-    let wasRepaired = false;
-    let reasons: string[] = [];
-
-    // 1. Phonetic Platform Auto-Correct (e.g. "june clear box", "yooutube", "yutube", "u tube" -> "youtube")
-    if (/\b(?:june\s*clear(?:\s*box)?|yooutube|yutube|u\s*tube|you\s*tube)\b/i.test(s)) {
-      s = s.replace(/\b(?:june\s*clear(?:\s*box)?|yooutube|yutube|u\s*tube|you\s*tube)\b/gi, 'youtube');
-      wasRepaired = true;
-      reasons.push('platform:youtube');
-    }
-    if (/\b(?:insta\s*gr[au]m|ig|insta)\b/i.test(s) && !/\binstagram\b/i.test(s)) {
-      s = s.replace(/\b(?:insta\s*gr[au]m|ig|insta)\b/gi, 'instagram');
-      wasRepaired = true;
-      reasons.push('platform:instagram');
-    }
-
-    // 2. Phonetic Random Video Auto-Correct:
-    // "ransom video" / "around the video" / "around a video" -> "a random video"
-    if (/\b(?:the\s+ransom|a\s+ransom|ransom)\s+(?:video|vide|clip)\b/i.test(s) ||
-        /\b(?:see\s+you\s+around|around)\s+(?:the|a)?\s*(?:video|vide)\b/i.test(s)) {
-      s = s.replace(/\b(?:the\s+ransom|a\s+ransom|ransom)\s+(?:video|vide|clip)\b/gi, 'a random video')
-           .replace(/\b(?:see\s+you\s+around|around)\s+(?:the|a)?\s*(?:video|vide)\b/gi, 'a random video');
-      wasRepaired = true;
-      reasons.push('acoustic:random-video');
-    }
-
-    // 3. Phonetic Verb Auto-Correct for "play":
-    // "k the ransom video" / "pay a video" / "be a video" / "lay a video" -> "play a video"
-    if (/\b(?:k|c|pay|lay|pray|plea|be|see)\s+(?:a\s+|the\s+)?(?:random\s+)?(?:video|vide|song|music)\b/i.test(s)) {
-      s = s.replace(/\b(?:k|c|pay|lay|pray|plea|be|see)\s+(a\s+|the\s+)?(random\s+)?(video|vide|song|music)\b/gi, 'play $1$2$3');
-      wasRepaired = true;
-      reasons.push('verb:play');
-    }
-
-    // 4. Broken Compound Repair: "open youtube and video" / "open youtube video" -> "open youtube and play a random video"
-    if (/\bopen\s+youtube\b/i.test(s) && /\bvideo\b/i.test(s) && !/\b(?:play|search|find)\b/i.test(s)) {
-      s = s.replace(/\bopen\s+youtube(?:\s+and)?\s+(?:a\s+)?video\b/gi, 'open youtube and play a random video');
-      wasRepaired = true;
-      reasons.push('compound:play-video');
-    }
-
-    // 5. Wrap / Preamble noise stripping:
-    // "you need to wrap open" / "wrap open" -> "open"
-    if (/\b(?:you\s+need\s+to\s+wrap\s+open|wrap\s+open)\b/i.test(s)) {
-      s = s.replace(/\b(?:you\s+need\s+to\s+wrap\s+open|wrap\s+open)\b/gi, 'open');
-      wasRepaired = true;
-      reasons.push('preamble:wrap');
-    }
-
-    // 6. Conversational Discard: ". Bye." / "[BLANK_AUDIO]"
-    if (/\[BLANK_AUDIO\]/i.test(s) || /\bbye\.?$/i.test(s)) {
-      s = s.replace(/\[BLANK_AUDIO\]/gi, '').replace(/\bbye\.?$/gi, '').trim();
-      wasRepaired = true;
-      reasons.push('closing:bye');
-    }
-
-    // 7. General intent inference: if sentence mentions "youtube" and ("random" or "video"), infer "open youtube and play a random video"
-    const lower = s.toLowerCase();
-    if (lower.includes('youtube') && (lower.includes('random') || lower.includes('video')) && !lower.includes('search') && !lower.includes('play')) {
-      s = 'open youtube and play a random video';
-      wasRepaired = true;
-      reasons.push('inference:youtube-video');
-    }
-
+    const res = VoiceGrammarCorrector.getInstance().correct(text);
     return {
-      corrected: s.replace(/\s+/g, ' ').trim(),
-      wasRepaired,
-      reason: reasons.join(', '),
+      corrected: res.correctedText,
+      wasRepaired: res.wasModified,
+      reason: res.explanation,
     };
   }
 

@@ -20,6 +20,7 @@ export interface VoiceState {
     rms: number;
     detail?: string;
     transcription?: string;
+    rawTranscription?: string;
     error?: string;
 }
 export type VoiceStateListener = (state: VoiceState) => void;
