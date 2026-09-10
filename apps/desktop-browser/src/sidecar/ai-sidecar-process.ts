@@ -157,13 +157,19 @@ async function transcribeAudio(
     }
 
     const pipe = await getTranscriber(modelTier);
-    const output = await pipe(activeAudio, {
-      chunk_length_s: 30,
-      stride_length_s: 5,
+    const pipeOptions: any = {
       language: 'english',
       task: 'transcribe',
       return_timestamps: false,
-    });
+      prompt: 'Hey Tesseract, open YouTube and play a video. Search Google, pause video, browse web.',
+    };
+
+    if (activeAudio.length > 16000 * 25) {
+      pipeOptions.chunk_length_s = 30;
+      pipeOptions.stride_length_s = 5;
+    }
+
+    const output = await pipe(activeAudio, pipeOptions);
 
     const elapsedMs = Date.now() - startTime;
     let rawText = (output?.text || '').trim();
@@ -171,6 +177,8 @@ async function transcribeAudio(
     // Clean Whisper hallucinations / sound tokens
     if (/^[.\s,!?\-—;:]+$/.test(rawText)) rawText = '';
     if (/^\[.*?\]$/.test(rawText) || /^\(.*?\)$/.test(rawText)) rawText = '';
+    // Strip embedded sound tokens (e.g. "[Music] Hey Tesseract")
+    rawText = rawText.replace(/\[[^\]]+\]/g, '').replace(/\([^)]+\)/g, '').replace(/\*[^*]+\*/g, '').trim();
 
     console.log(`[AISidecar] Whisper ${modelTier} transcribed in ${elapsedMs}ms: "${rawText}"`);
     return { text: rawText, elapsedMs, confidence: rawText ? 0.95 : 0, model: modelTier };
