@@ -428,7 +428,7 @@ ipcMain.handle('whisper:transcribe', async (_event, audioPayload: any) => {
     // Delegate to out-of-process AI Engine Sidecar so Chromium UI remains at 60fps
     try {
       const sidecarRes = await AISidecarClient.getInstance().transcribe(float32);
-      if (sidecarRes && typeof sidecarRes.text === 'string') {
+      if (sidecarRes && typeof sidecarRes.text === 'string' && sidecarRes.text.trim().length > 0) {
         console.log(`[Whisper IPC via Sidecar] Transcribed: "${sidecarRes.text}" in ${sidecarRes.elapsedMs}ms (model: ${sidecarRes.model})`);
         return { success: true, text: sidecarRes.text, elapsedMs: sidecarRes.elapsedMs, model: sidecarRes.model };
       }
@@ -436,7 +436,7 @@ ipcMain.handle('whisper:transcribe', async (_event, audioPayload: any) => {
       console.warn('[Whisper IPC] Sidecar failed, falling back to in-process Whisper:', sidecarErr.message);
     }
 
-    // In-process fallback
+    // In-process fallback if sidecar returned empty or failed
     await new Promise(resolve => setImmediate(resolve));
     const text = await transcribeAudioBuffer(float32);
     console.log(`[Whisper IPC Fallback] Returning text: "${text}"`);

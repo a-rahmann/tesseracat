@@ -44,9 +44,6 @@ export declare class VoiceManager {
     private preRollSamples;
     private maxCommandDurationTimer;
     private isStandbyMode;
-    private isVerifyingWake;
-    private postWakeVerificationChunks;
-    private postWakeVerificationSamples;
     private wakeGraceUntil;
     private hasDetectedUserSpeech;
     private stateListeners;
@@ -75,7 +72,7 @@ export declare class VoiceManager {
      * Core real-time audio processing loop.
      */
     private processIncomingAudio;
-    private handleAcousticWakeCandidate;
+    private handleWakeDetected;
     startPushToTalk(): Promise<void>;
     stopRecordingAndTranscribe(): void;
     finishCommandRecording(): Promise<void>;

@@ -107,60 +107,66 @@ async function transcribeAudio(audioFloat32, modelTier = 'tiny.en') {
             console.log(`[AISidecar] Audio rejected as flat silence (maxAmp: ${maxAmp.toFixed(5)}, RMS: ${rms.toFixed(5)})`);
             return { text: '', elapsedMs: Date.now() - startTime, confidence: 0, model: modelTier };
         }
-        // Dynamic Normalization with safe headroom (boost quiet mics up to 15x)
-        const targetPeak = 0.85;
-        const currentPeak = Math.max(Math.abs(min), Math.abs(max));
-        const normalizedAudio = new Float32Array(sampleCount);
-        if (currentPeak > 0.0005) {
-            const scale = Math.min(targetPeak / currentPeak, 15.0);
-            for (let i = 0; i < sampleCount; i++) {
-                normalizedAudio[i] = Math.max(-1.0, Math.min(1.0, audioFloat32[i] * scale));
-            }
-        }
-        else {
-            normalizedAudio.set(audioFloat32);
-        }
-        // Find speech onset (trim leading silence)
-        const windowSize = 320; // 20ms
-        const energyThreshold = 0.0002;
+        // 1. Remove DC bias
+        let mean = 0;
+        for (let i = 0; i < sampleCount; i++)
+            mean += audioFloat32[i];
+        mean /= sampleCount;
+        for (let i = 0; i < sampleCount; i++)
+            audioFloat32[i] -= mean;
+        // 2. Trim leading & trailing silence (300ms pre-roll preserves initial consonant)
+        const trimThreshold = Math.max(0.004, rms * 0.08);
         let speechStart = 0;
-        for (let i = 0; i < sampleCount - windowSize; i += windowSize) {
-            let winSum = 0;
-            for (let j = 0; j < windowSize; j++) {
-                winSum += normalizedAudio[i + j] * normalizedAudio[i + j];
-            }
-            if (winSum / windowSize > energyThreshold) {
-                // 300ms pre-roll to prevent initial consonant clipping
+        for (let i = 0; i < sampleCount; i++) {
+            if (Math.abs(audioFloat32[i]) >= trimThreshold) {
                 speechStart = Math.max(0, i - 4800);
                 break;
             }
         }
-        const activeAudio = speechStart > 0 ? normalizedAudio.slice(speechStart) : normalizedAudio;
+        let speechEnd = sampleCount;
+        for (let i = sampleCount - 1; i >= speechStart; i--) {
+            if (Math.abs(audioFloat32[i]) >= trimThreshold) {
+                speechEnd = Math.min(sampleCount, i + 4800);
+                break;
+            }
+        }
+        const activeAudio = audioFloat32.slice(speechStart, speechEnd);
         if (activeAudio.length < 1600) {
             return { text: '', elapsedMs: Date.now() - startTime, confidence: 0, model: modelTier };
+        }
+        // 3. Peak Normalization safely (max 15x boost)
+        let peak = 0;
+        for (let i = 0; i < activeAudio.length; i++) {
+            const a = Math.abs(activeAudio[i]);
+            if (a > peak)
+                peak = a;
+        }
+        if (peak > 0.0005) {
+            const scale = Math.min(15.0, 0.85 / peak);
+            for (let i = 0; i < activeAudio.length; i++) {
+                activeAudio[i] = Math.max(-1.0, Math.min(1.0, activeAudio[i] * scale));
+            }
         }
         const pipe = await getTranscriber(modelTier);
         const pipeOptions = {
             language: 'english',
             task: 'transcribe',
             return_timestamps: false,
+            chunk_length_s: Math.min(30, Math.max(5, Math.ceil(activeAudio.length / 16000) + 1)),
             prompt: 'Hey Tesseract, open YouTube and play a video. Search Google, pause video, browse web.',
         };
-        if (activeAudio.length > 16000 * 25) {
-            pipeOptions.chunk_length_s = 30;
-            pipeOptions.stride_length_s = 5;
-        }
         const output = await pipe(activeAudio, pipeOptions);
         const elapsedMs = Date.now() - startTime;
-        let rawText = (output?.text || '').trim();
+        let rawText = typeof output?.text === 'string' ? output.text.trim() : '';
+        console.log(`[AISidecar] Whisper ${modelTier} raw output: "${rawText}" in ${elapsedMs}ms`);
         // Clean Whisper hallucinations / sound tokens
         if (/^[.\s,!?\-—;:]+$/.test(rawText))
             rawText = '';
-        if (/^\[.*?\]$/.test(rawText) || /^\(.*?\)$/.test(rawText))
+        if (/^(\[|\(|\*)[a-zA-Z\s_-]+(\]|\)|\*)$/i.test(rawText))
             rawText = '';
         // Strip embedded sound tokens (e.g. "[Music] Hey Tesseract")
         rawText = rawText.replace(/\[[^\]]+\]/g, '').replace(/\([^)]+\)/g, '').replace(/\*[^*]+\*/g, '').trim();
-        console.log(`[AISidecar] Whisper ${modelTier} transcribed in ${elapsedMs}ms: "${rawText}"`);
+        console.log(`[AISidecar] Whisper ${modelTier} cleaned text: "${rawText}"`);
         return { text: rawText, elapsedMs, confidence: rawText ? 0.95 : 0, model: modelTier };
     }
     finally {

@@ -96,11 +96,6 @@ export class VoiceManager {
   private maxCommandDurationTimer: any = null;
   private isStandbyMode = false;
 
-  // Neural Wake Verification & Audio Continuity
-  private isVerifyingWake = false;
-  private postWakeVerificationChunks: Float32Array[] = [];
-  private postWakeVerificationSamples = 0;
-
   // VAD & Timing guards
   private wakeGraceUntil = 0;
   private hasDetectedUserSpeech = false;
@@ -122,10 +117,10 @@ export class VoiceManager {
       minSpeechDurationMs: 180,
     });
 
-    // Wake event handler - acoustic candidate verified via neural STT for 0% false wake
-    this.wakeDetector.onWakeDetected(async (result: WakeDetectionResult) => {
-      if (this.currentState !== 'WAKE_LISTENING' || this.isMuted || this.isVerifyingWake) return;
-      await this.handleAcousticWakeCandidate(result);
+    // Wake event handler (<200ms instantaneous response)
+    this.wakeDetector.onWakeDetected((result: WakeDetectionResult) => {
+      if (this.currentState !== 'WAKE_LISTENING' || this.isMuted) return;
+      this.handleWakeDetected(result);
     });
 
     // VAD speech start handler
@@ -305,11 +300,7 @@ export class VoiceManager {
 
     switch (this.currentState) {
       case 'WAKE_LISTENING':
-        if (this.isVerifyingWake) {
-          // Buffer audio while neural verification is in-flight so initial command words are not lost!
-          this.postWakeVerificationChunks.push(pcm16k);
-          this.postWakeVerificationSamples += pcm16k.length;
-        } else if (this.isWakeWordActive) {
+        if (this.isWakeWordActive) {
           this.wakeDetector.processChunk(pcm16k);
           // Maintain rolling 350ms pre-roll buffer (~5600 samples at 16kHz)
           this.preRollChunks.push(pcm16k);
@@ -353,85 +344,12 @@ export class VoiceManager {
     }
   }
 
-  private async handleAcousticWakeCandidate(result: WakeDetectionResult): Promise<void> {
-    if (this.isVerifyingWake) return;
-    this.isVerifyingWake = true;
-    this.postWakeVerificationChunks = [];
-    this.postWakeVerificationSamples = 0;
+  private handleWakeDetected(result: WakeDetectionResult): void {
+    console.log(`[VoiceManager] Acoustic wake confirmed (${result.phrase})! Listening for user command...`);
 
-    console.log(`[VoiceManager] Acoustic wake candidate detected (${result.phrase}). Verifying with neural STT...`);
-
-    const verificationTimeout = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error('Neural wake verification timeout')), 1600)
-    );
-
-    let wakeTranscript = '';
-    try {
-      wakeTranscript = await Promise.race([
-        WhisperBridge.transcribe(result.wakeAudio),
-        verificationTimeout,
-      ]);
-    } catch (err: any) {
-      console.warn('[VoiceManager] Neural wake verification error or timeout:', err?.message || err);
-      // Fallback: only pass if acoustic score was exceptional to prevent false waking
-      if (result.score >= 0.98) {
-        wakeTranscript = 'Hey Tesseract';
-      }
-    }
-
-    const cleanTranscript = (wakeTranscript || '').trim();
-    const WAKE_WORD_REGEX = /\b(?:hey|hi|hello|ok|okay|play)?\s*(?:tesseract|teseract|tesserac|deseract|desert\s*act|tess\s*act|test\s*act|tessera|tess)\b/i;
-
-    if (!WAKE_WORD_REGEX.test(cleanTranscript)) {
-      console.log(`[VoiceManager] Wake candidate rejected by neural verification: "${cleanTranscript}". Silently suppressing false wake.`);
-      this.isVerifyingWake = false;
-      this.postWakeVerificationChunks = [];
-      this.postWakeVerificationSamples = 0;
-      return;
-    }
-
-    console.log(`[VoiceManager] Neural wake verified! "${cleanTranscript}"`);
-
-    // Check if user spoke a one-shot command (e.g. "Hey Tesseract, open YouTube")
-    const STRIP_WAKE_REGEX = /^(?:hey|hi|hello|ok|okay)?\s*(?:tesseract|teseract|tesserac|deseract|desert\s*act|tess\s*act|test\s*act|tessera|tess)[,!?.\s]*/i;
-    const commandTail = cleanTranscript.replace(STRIP_WAKE_REGEX, '').replace(/^[,\s.!?-]+/, '').trim();
-
-    if (commandTail.length >= 3) {
-      console.log(`[VoiceManager] One-shot command detected in wake utterance: "${commandTail}"`);
-      this.isVerifyingWake = false;
-      this.postWakeVerificationChunks = [];
-      this.postWakeVerificationSamples = 0;
-
-      // Transition to WAKE_DETECTED briefly then dispatch command directly
-      this.transitionTo('WAKE_DETECTED', { detail: result.phrase });
-      setTimeout(async () => {
-        const grammarRes = VoiceGrammarCorrector.getInstance().correct(commandTail);
-        const finalCmd = grammarRes.wasModified ? grammarRes.correctedText : commandTail;
-        if (grammarRes.wasModified) {
-          console.log(`[VoiceManager] One-shot command grammar auto-corrected: "${commandTail}" -> "${finalCmd}"`);
-        }
-        this.transitionTo('THINKING', { transcription: finalCmd, rawTranscription: commandTail });
-
-        for (const listener of this.transcriptionListeners) {
-          try { listener(finalCmd); } catch {}
-        }
-        for (const listener of this.commandListeners) {
-          try { await listener(finalCmd); } catch (e) { console.error('[Command Listener Error]', e); }
-        }
-      }, 150);
-      return;
-    }
-
-    // Standard two-stage wake (user said "Hey Tesseract" and is waiting to give command)
-    const verificationStash = [...this.postWakeVerificationChunks];
-    const stashSamples = this.postWakeVerificationSamples;
-    this.isVerifyingWake = false;
-    this.postWakeVerificationChunks = [];
-    this.postWakeVerificationSamples = 0;
-
-    // Seed command recording buffer with audio captured during neural verification so no word is cut off
-    this.commandAudioChunks = [...verificationStash];
-    this.totalCommandSamples = stashSamples;
+    // Seed command recording buffer with pre-roll audio so initial consonants are preserved
+    this.commandAudioChunks = [...this.preRollChunks];
+    this.totalCommandSamples = this.preRollSamples;
     this.preRollChunks = [];
     this.preRollSamples = 0;
     this.hasDetectedUserSpeech = false;
@@ -447,21 +365,21 @@ export class VoiceManager {
       if (this.currentState === 'WAKE_DETECTED') {
         this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
       }
-    }, 200);
+    }, 180);
 
-    // Inactivity timeout: if user does not speak within 4.5s, return to wake listening without invoking Whisper
+    // Inactivity timeout: if user does not speak within 5.0s, return to wake listening without invoking Whisper
     if (this.maxCommandDurationTimer) clearTimeout(this.maxCommandDurationTimer);
     this.maxCommandDurationTimer = setTimeout(() => {
       if (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED') {
         if (!this.hasDetectedUserSpeech) {
-          console.log('[VoiceManager] Command listening timed out (no user speech detected within 4.5s). Returning to wake listening.');
+          console.log('[VoiceManager] Command listening timed out (no user speech detected within 5.0s). Returning to wake listening.');
           this.resetToWakeListening();
         } else {
           console.log('[VoiceManager] Max command duration reached.');
           this.finishCommandRecording();
         }
       }
-    }, 4500);
+    }, 5000);
   }
 
   public async startPushToTalk(): Promise<void> {
@@ -574,11 +492,17 @@ export class VoiceManager {
         return;
       }
 
+      // Strip leading wake word prefix if user spoke a fluid one-shot command
+      const strippedCommand = transcription
+        .replace(/^(?:hey|hi|hello|ok|okay)?\s*(?:tesseract|teseract|tesserac|deseract|desert\s*act|tess\s*act|test\s*act|tessera|tess)[,!?.\s]*/i, '')
+        .trim();
+      const commandToProcess = strippedCommand.length > 0 ? strippedCommand : transcription;
+
       // Google-Style Generalized Voice Grammar & Acoustic Correction (<1ms)
-      const grammarRes = VoiceGrammarCorrector.getInstance().correct(transcription);
-      const finalCommand = grammarRes.wasModified ? grammarRes.correctedText : transcription;
+      const grammarRes = VoiceGrammarCorrector.getInstance().correct(commandToProcess);
+      const finalCommand = grammarRes.wasModified ? grammarRes.correctedText : commandToProcess;
       if (grammarRes.wasModified) {
-        console.log(`[VoiceManager] Voice grammar auto-corrected: "${transcription}" -> "${finalCommand}" (${grammarRes.explanation})`);
+        console.log(`[VoiceManager] Voice grammar auto-corrected: "${commandToProcess}" -> "${finalCommand}" (${grammarRes.explanation})`);
       }
 
       this.transitionTo('THINKING', { transcription: finalCommand, rawTranscription: transcription });
@@ -647,9 +571,6 @@ export class VoiceManager {
     }
     this.wakeDetector.reset();
     this.vad.reset();
-    this.isVerifyingWake = false;
-    this.postWakeVerificationChunks = [];
-    this.postWakeVerificationSamples = 0;
     this.commandAudioChunks = [];
     this.totalCommandSamples = 0;
     this.hasDetectedUserSpeech = false;
