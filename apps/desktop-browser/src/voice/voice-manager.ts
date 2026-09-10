@@ -317,8 +317,8 @@ export class VoiceManager {
         this.commandAudioChunks.push(pcm16k);
         this.totalCommandSamples += pcm16k.length;
 
-        // Directly detect speech energy from frame RMS
-        if (rms >= 0.005) {
+        // Detect speech energy with realistic mic sensitivity (threshold 0.0012)
+        if (rms >= 0.0012 || pcm16k.some(s => Math.abs(s) >= 0.006)) {
           this.hasDetectedUserSpeech = true;
         }
 
@@ -450,12 +450,20 @@ export class VoiceManager {
     }
     const avgRms = Math.sqrt(sumSq / fullBuffer.length);
 
-    // Strictly skip Whisper if no active human speech was detected by VAD or amplitude is too quiet
-    const hasVoiceEnergy = this.hasDetectedUserSpeech && (maxAmp >= 0.025 || avgRms >= 0.005);
+    // Skip only if the buffer is essentially flat digital silence (<0.2s or peak < 0.003)
+    const hasVoiceEnergy = fullBuffer.length >= 3200 && (maxAmp >= 0.003 || avgRms >= 0.0006);
     if (!hasVoiceEnergy) {
-      console.log(`[VoiceManager] No command speech detected (hasSpeech: ${this.hasDetectedUserSpeech}, MaxAmp: ${maxAmp.toFixed(4)}, RMS: ${avgRms.toFixed(5)}), skipping Whisper.`);
+      console.log(`[VoiceManager] Empty audio discarded (samples: ${fullBuffer.length}, maxAmp: ${maxAmp.toFixed(5)}, RMS: ${avgRms.toFixed(5)})`);
       this.resetToWakeListening();
       return;
+    }
+
+    // Automatic Gain Control (AGC): Normalize low microphone input so Whisper receives clear, punchy audio
+    if (maxAmp > 0.001 && maxAmp < 0.7) {
+      const boost = Math.min(0.85 / maxAmp, 12.0);
+      for (let i = 0; i < fullBuffer.length; i++) {
+        fullBuffer[i] = Math.max(-1.0, Math.min(1.0, fullBuffer[i] * boost));
+      }
     }
 
     this.transitionTo('TRANSCRIBING');

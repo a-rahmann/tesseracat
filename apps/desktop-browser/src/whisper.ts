@@ -64,9 +64,9 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
 
   const maxAmp = Math.max(Math.abs(min), Math.abs(max));
 
-  // Reject pure digital zero or non-speech background murmur
-  if (maxAmp < 0.01 && rms < 0.002) {
-    console.log('[Whisper] Rejected: audio is ambient background noise (Max < 0.01, RMS < 0.002)');
+  // Reject pure digital zero
+  if (maxAmp < 0.002 && rms < 0.0004) {
+    console.log('[Whisper] Rejected: audio is flat silence');
     return '';
   }
 
@@ -108,8 +108,8 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
     const a = Math.abs(activeAudio[i]);
     if (a > peak) peak = a;
   }
-  if (peak > 0.001) {
-    const normScale = Math.min(6.0, 0.85 / peak);
+  if (peak > 0.0005) {
+    const normScale = Math.min(15.0, 0.85 / peak);
     for (let i = 0; i < activeAudio.length; i++) {
       let v = activeAudio[i] * normScale;
       if (v > 1.0) v = 1.0;

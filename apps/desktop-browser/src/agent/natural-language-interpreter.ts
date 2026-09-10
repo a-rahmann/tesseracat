@@ -120,17 +120,14 @@ export class NaturalLanguageInterpreter {
       return fastPathGoal;
     }
 
-    // Fast syntactic coherence gate: instantly reject dangling fragments or missing transitive targets
+    // Fast syntactic coherence gate: only reject empty text or dangling trailing conjunctions/verbs without target
     const lower = stripped.toLowerCase();
-    const hasActionableVerb = /\b(?:open|go|visit|navigate|search|find|lookup|check|read|see|click|press|type|enter|scroll|play|pause|stop|close|compare|buy|order|download|summarize|explain|tell|show|what|who|where|how|why|when)\b/i.test(lower);
-    const isDanglingConjunction = /^(?:and|but|or|so|yet)\s+(?:you\s+)?/i.test(lower);
-    const isOpenWithoutTarget = /\b(?:open|visit|navigate\s+to|go\s+to)\s+(?:and|or|then|into\s+that|a|the)?\s*$/i.test(lower) ||
-                                /\b(?:open|visit|navigate\s+to|go\s+to)\s+(?:and|or|then)\s+/i.test(lower);
-    const words = lower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1);
-    const hasSufficientContent = words.length >= 2;
+    const isDanglingConjunction = /^(?:and|but|or|so|yet)\s*$/i.test(lower);
+    const isOpenWithoutTarget = /^(?:open|visit|navigate\s+to|go\s+to)\s*$/i.test(lower);
+    const words = lower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 1);
 
-    if (!hasActionableVerb || isDanglingConjunction || isOpenWithoutTarget || !hasSufficientContent) {
-      console.warn(`[NaturalLanguageInterpreter] Fast coherence gate rejected incoherent utterance: "${stripped}" (dangling=${isDanglingConjunction}, noTarget=${isOpenWithoutTarget}, words=${words.length})`);
+    if (words.length === 0 || isDanglingConjunction || isOpenWithoutTarget) {
+      console.warn(`[NaturalLanguageInterpreter] Fast coherence gate rejected dangling fragment: "${stripped}"`);
       return {
         rawUserText: rawText,
         goal: stripped,
@@ -1088,18 +1085,12 @@ Output strictly valid JSON matching this schema:
       };
     }
 
-    // Coherence Gate: Validate utterance before allowing fallback general automation
-    const hasActionableVerb = /\b(?:open|go|visit|navigate|search|find|lookup|check|read|see|click|press|type|enter|scroll|play|pause|stop|close|compare|buy|order|download|summarize|explain|tell|show|what|who|where|how|why|when)\b/i.test(lower);
-    const isDanglingConjunction = /^(?:and|but|or|so|yet)\s+(?:you\s+)?/i.test(lower);
-    const isOpenWithoutTarget = /\b(?:open|visit|navigate\s+to|go\s+to)\s+(?:and|or|then|into\s+that|a|the)?\s*$/i.test(lower) ||
-                                /\b(?:open|visit|navigate\s+to|go\s+to)\s+(?:and|or|then)\s+/i.test(lower);
-    const words = lower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1);
-    const hasSufficientContent = words.length >= 2;
+    const isDanglingConjunction = /^(?:and|but|or|so|yet)\s*$/i.test(lower);
+    const isOpenWithoutTarget = /^(?:open|visit|navigate\s+to|go\s+to)\s*$/i.test(lower);
+    const words = lower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 1);
 
-    const isCoherent = hasActionableVerb && !isDanglingConjunction && !isOpenWithoutTarget && hasSufficientContent;
-
-    if (!isCoherent) {
-      console.warn(`[NaturalLanguageInterpreter] Coherence gate failed for utterance: "${cleanText}" (dangling=${isDanglingConjunction}, noTarget=${isOpenWithoutTarget}, words=${words.length})`);
+    if (words.length === 0 || isDanglingConjunction || isOpenWithoutTarget) {
+      console.warn(`[NaturalLanguageInterpreter] Coherence gate rejected dangling fragment: "${cleanText}"`);
       return {
         rawUserText: rawText,
         goal: cleanText,
@@ -1115,7 +1106,8 @@ Output strictly valid JSON matching this schema:
       };
     }
 
-    const suggestedTargetUrl = this.extractInitialDomainUrl(cleanText);
+    const suggestedTargetUrl = this.extractInitialDomainUrl(cleanText) ||
+      (lower.includes('search') || words.length > 0 ? `https://www.google.com/search?q=${encodeURIComponent(cleanText)}` : undefined);
 
     // Default general automation (has action verb and coherent target, but fell back from LLM)
     return {

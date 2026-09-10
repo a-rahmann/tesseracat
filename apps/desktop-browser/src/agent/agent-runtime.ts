@@ -581,6 +581,19 @@ export class AgentRuntime {
     // COHERENCE & CONFIDENCE GATE:
     // Low-confidence, incoherent, or ambiguous transcriptions must NEVER launch arbitrary agent missions.
     if (interpreted.isCoherent === false || interpreted.isUncertain || interpreted.confidence < 0.6) {
+      const cleanGoal = (interpreted.goal || goal || '').trim();
+      const hasMeaningfulContent = cleanGoal.length >= 2 && !/^(?:sorry|error|none|\.)$/i.test(cleanGoal);
+      if (hasMeaningfulContent) {
+        console.log(`[AgentRuntime] Ambiguous query fallback: routing "${cleanGoal}" to search`);
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanGoal)}`;
+        this.updateState({ status: 'executing', currentAction: `Searching Google for "${cleanGoal}"...`, progress: 0.5 });
+        await this.speak(`Searching for ${cleanGoal}.`);
+        await BrowserAutomator.getInstance().navigate(searchUrl);
+        this.updateState({ status: 'success', currentAction: 'Done', progress: 1.0 });
+        this.voiceManager.resetToWakeListening();
+        return;
+      }
+
       console.warn(`[AgentRuntime] Transcription confidence/coherence gate rejected command: "${goal}" (confidence: ${interpreted.confidence}, coherent: ${interpreted.isCoherent})`);
       TaskRecorder.getInstance().cancelTask();
       this.updateState({ status: 'idle', currentAction: 'Command not recognized', progress: 1.0 });

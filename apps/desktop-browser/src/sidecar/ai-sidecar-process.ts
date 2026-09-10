@@ -114,19 +114,19 @@ async function transcribeAudio(
     const maxAmp = Math.max(Math.abs(min), Math.abs(max));
     const rms = Math.sqrt(sumSq / sampleCount);
 
-    // Reject empty room silence or low-energy background fans
-    if (maxAmp < 0.015 && rms < 0.003) {
-      console.log(`[AISidecar] Audio rejected as background noise (maxAmp: ${maxAmp.toFixed(4)}, RMS: ${rms.toFixed(5)})`);
+    // Only reject if virtually flat silence
+    if (maxAmp < 0.002 && rms < 0.0004) {
+      console.log(`[AISidecar] Audio rejected as flat silence (maxAmp: ${maxAmp.toFixed(5)}, RMS: ${rms.toFixed(5)})`);
       return { text: '', elapsedMs: Date.now() - startTime, confidence: 0, model: modelTier };
     }
 
-    // Dynamic Normalization with safe headroom
+    // Dynamic Normalization with safe headroom (boost quiet mics up to 15x)
     const targetPeak = 0.85;
     const currentPeak = Math.max(Math.abs(min), Math.abs(max));
     const normalizedAudio = new Float32Array(sampleCount);
 
-    if (currentPeak > 0.001) {
-      const scale = Math.min(targetPeak / currentPeak, 6.0);
+    if (currentPeak > 0.0005) {
+      const scale = Math.min(targetPeak / currentPeak, 15.0);
       for (let i = 0; i < sampleCount; i++) {
         normalizedAudio[i] = Math.max(-1.0, Math.min(1.0, audioFloat32[i] * scale));
       }
