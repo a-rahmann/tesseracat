@@ -9,7 +9,12 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "copy:assets": "node scripts/copy-assets.js",
+    "prestart": "npm run build && npm run copy:assets",
     "start": "electron apps/desktop-browser",
+    "pack": "npm run build && npm run copy:assets && npx electron-builder --dir",
+    "dist": "npm run build && npm run copy:assets && npx electron-builder --win",
+    "dist:portable": "npm run build && npm run copy:assets && npx electron-builder --win portable",
     "test": "node --test"
   },
   "devDependencies": {
@@ -17,6 +22,7 @@
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tsx": "^4.23.12",
@@ -27,5 +33,40 @@
   "dependencies": {
     "@xenova/transformers": "^2.17.2",
     "zod": "^4.5.4"
+  },
+  "build": {
+    "appId": "com.tesseract.browser",
+    "productName": "Tesseract AI Browser",
+    "executableName": "Tesseract",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "apps/desktop-browser/dist/**/*",
+      "apps/desktop-browser/src/browser-window.html",
+      "apps/desktop-browser/package.json",
+      "apps/agent-runtime/dist/**/*",
+      "apps/agent-runtime/package.json",
+      "packages/*/dist/**/*",
+      "packages/*/package.json",
+      "node_modules/**/*"
+    ],
+    "extraMetadata": {
+      "main": "apps/desktop-browser/dist/main.js"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Tesseract AI Browser"
+    }
   }
 }

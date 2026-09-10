@@ -23,7 +23,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSubmitGoal }) => {
         type="text"
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        placeholder="Type a goal or command... (Hold 'T', press Ctrl+Space to push-to-talk, or say 'Hey Tesseract')"
+        placeholder="Type a goal or command... (Hold 'T', press Ctrl+Space to talk, or say 'Hey Buddy' / 'Wake up')"
         style={{
           width: '100%',
           padding: '16px 20px',

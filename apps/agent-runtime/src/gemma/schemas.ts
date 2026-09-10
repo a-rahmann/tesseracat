@@ -10,9 +10,11 @@ export const IntentTypeEnum = z.enum([
   'explain_selected_text',
   'research_compare',
   'browser_navigation',
+  'browser_automation',
   'file_task',
   'form_task',
   'communication_task',
+  'credential_task',
   'calendar_query',
   'media_control',
   'unknown',
@@ -31,21 +33,33 @@ export const IntentSchema = z.object({
 export type IntentClassification = z.infer<typeof IntentSchema>;
 
 /**
- * 2. Task Planning Schemas (Read-only & Navigation Tools ONLY)
+ * 2. Task Planning Schemas (Strict Typed Deterministic Tools)
  */
-export const AllowedReadOnlyToolEnum = z.enum([
+export const AllowedAgentToolEnum = z.enum([
   'browser_navigate',
+  'browser_click',
+  'browser_type',
+  'browser_keypress',
+  'browser_scroll',
+  'browser_wait',
+  'browser_read_page',
   'web_search',
   'read_page_content',
+  'inspect_form_fields',
+  'form_fill',
+  'request_credential',
   'privacy_scan',
   'user_context_analyze',
 ]);
 
-export type AllowedReadOnlyTool = z.infer<typeof AllowedReadOnlyToolEnum>;
+export type AllowedAgentTool = z.infer<typeof AllowedAgentToolEnum>;
+
+// Alias for backward compatibility
+export const AllowedReadOnlyToolEnum = AllowedAgentToolEnum;
+export type AllowedReadOnlyTool = AllowedAgentTool;
 
 export const ProhibitedToolKeywords = [
   'form_submit',
-  'submit',
   'upload',
   'send',
   'delete',
@@ -58,10 +72,19 @@ export const ProhibitedToolKeywords = [
   'terminal',
 ] as const;
 
+export const ElementTargetSchema = z.object({
+  selector: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  text: z.string().optional(),
+  placeholder: z.string().optional(),
+  point: z.object({ x: z.number(), y: z.number() }).optional(),
+});
+
 export const TaskPlanStepSchema = z.object({
   stepNumber: z.number().int().positive(),
   description: z.string().min(1),
-  toolName: AllowedReadOnlyToolEnum,
+  toolName: AllowedAgentToolEnum,
   toolParameters: z.record(z.string(), z.unknown()).default({}),
 });
 
@@ -71,7 +94,7 @@ export const TaskPlanSchema = z.object({
   goal: z.string().min(1),
   reasoning: z.string().default(''),
   steps: z.array(TaskPlanStepSchema),
-  isReadOnly: z.literal(true).default(true),
+  isReadOnly: z.boolean().default(true),
   safeAlternatives: z.array(z.string()).optional().default([]),
 });
 

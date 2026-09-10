@@ -6,3 +6,5 @@ dist/
 .cache/
 .DS_Store
 *.tsbuildinfo
+
+release/

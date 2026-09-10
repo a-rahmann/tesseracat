@@ -1,3 +1,5 @@
+import { PageObservation, VerificationResult } from './element-target.js';
+
 export enum TaskStatus {
   CREATED = 'CREATED',
   UNDERSTANDING = 'UNDERSTANDING',
@@ -24,6 +26,7 @@ export interface TaskStep {
   status: 'PENDING' | 'WAITING_APPROVAL' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
   result?: unknown;
   error?: string;
+  verification?: VerificationResult;
   startedAt?: string;
   completedAt?: string;
 }
@@ -63,6 +66,9 @@ export interface TaskRecord {
   confidence?: TaskConfidenceScore;
   approvals: TaskApprovalRequest[];
   errorHistory: string[];
+  observations?: PageObservation[];
+  retries?: number;
+  verificationHistory?: VerificationResult[];
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

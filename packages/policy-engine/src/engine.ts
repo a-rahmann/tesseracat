@@ -1,5 +1,6 @@
 import {
   ActionCategory,
+  PermissionLevel,
   PolicyContext,
   PolicyDecision,
   RiskLevel,
@@ -16,37 +17,37 @@ export class DeterministicPolicyEngine {
     params: Record<string, unknown>,
     context: PolicyContext
   ): PolicyDecision {
-    // 1. NON-NEGOTIABLE SECURITY BLOCKS
+    // 1. NON-NEGOTIABLE HARD SECURITY BLOCKS
     if (this.isForbiddenAction(toolName, params)) {
       return {
         allowed: false,
+        permissionLevel: PermissionLevel.LEVEL_2_EXPLICIT_CONFIRMATION,
         requiresApproval: false,
         requiresTakeover: true,
         riskLevel: RiskLevel.CRITICAL,
-        reason: 'Action violates non-negotiable security rules (e.g. arbitrary JS, raw terminal commands, credential access).',
+        reason: 'Action violates non-negotiable security rules (arbitrary script/shell execution, direct credential exfiltration).',
       };
     }
 
-    // 2. CHECK SENSITIVE AUTHENTICATION / PAYMENT TAKEOVER
-    if (category === 'AUTHENTICATION' || category === 'PAYMENT') {
+    // 2. LEVEL 2: EXPLICIT CONFIRMATION REQUIRED (Credentials, Authentication, Purchases, Financial)
+    if (category === 'AUTHENTICATION' || category === 'PAYMENT' || toolName.includes('credential') || toolName.includes('password') || toolName.includes('checkout') || toolName.includes('purchase')) {
       return {
-        allowed: false,
-        requiresApproval: false,
-        requiresTakeover: true,
+        allowed: true,
+        permissionLevel: PermissionLevel.LEVEL_2_EXPLICIT_CONFIRMATION,
+        requiresApproval: true,
+        requiresTakeover: false,
         riskLevel: RiskLevel.CRITICAL,
-        reason: 'Authentication, CAPTCHAs, OTPs, passkeys and payment completion require user takeover.',
+        reason: 'Using saved credentials, entering passwords, or executing financial transactions requires explicit user confirmation.',
       };
     }
 
     // 3. CHECK AUTONOMOUS MISSION SCOPE
-    if (context.isAutonomousMission) {
-      if (
-        context.missionAllowedTools &&
-        !context.missionAllowedTools.includes(toolName)
-      ) {
+    if (context.isAutonomousMission && context.missionAllowedTools) {
+      if (!context.missionAllowedTools.includes(toolName)) {
         return {
           allowed: false,
-          requiresApproval: false,
+          permissionLevel: PermissionLevel.LEVEL_1_CONTEXT_CONFIRMATION,
+          requiresApproval: true,
           requiresTakeover: false,
           riskLevel: RiskLevel.HIGH,
           reason: `Tool '${toolName}' is not in the explicit allowlist for this autonomous mission.`,
@@ -54,82 +55,66 @@ export class DeterministicPolicyEngine {
       }
     }
 
-    // 4. CATEGORY RISK EVALUATION
+    // 4. CATEGORY PERMISSION & RISK EVALUATION
     switch (category) {
+      // LEVEL 0: AUTOMATIC EXECUTION
       case 'READ_PAGE':
       case 'TAB_NAVIGATION':
       case 'INTERACT_DOM':
-        return {
-          allowed: true,
-          requiresApproval: false,
-          requiresTakeover: false,
-          riskLevel: RiskLevel.LOW,
-          reason: 'Read-only page inspection and navigation are permitted.',
-        };
-
-      case 'DOWNLOAD_FILE':
       case 'FORM_PREVIEW':
         return {
           allowed: true,
+          permissionLevel: PermissionLevel.LEVEL_0_AUTOMATIC,
           requiresApproval: false,
           requiresTakeover: false,
           riskLevel: RiskLevel.LOW,
-          reason: 'Safe preview and ordinary downloads are allowed.',
+          reason: 'Page inspection, navigation, scrolling, and harmless interactions are automatically permitted.',
         };
 
-      case 'FORM_SUBMIT':
-        return {
-          allowed: true,
-          requiresApproval: !context.isAutonomousMission,
-          requiresTakeover: false,
-          riskLevel: RiskLevel.MEDIUM,
-          reason: 'Form submission requires explicit final user confirmation unless permitted by mission scope.',
-        };
-
+      // LEVEL 1: CONTEXTUAL CONFIRMATION REQUIRED
+      case 'DOWNLOAD_FILE':
       case 'FILE_UPLOAD':
       case 'FILE_MODIFY':
+      case 'SEND_COMMUNICATION':
+      case 'INSTALL_CONNECTOR':
         return {
           allowed: true,
+          permissionLevel: PermissionLevel.LEVEL_1_CONTEXT_CONFIRMATION,
           requiresApproval: true,
           requiresTakeover: false,
           riskLevel: RiskLevel.MEDIUM,
-          reason: 'File modification and uploads require user confirmation showing source and destination.',
+          reason: 'File operations and communication drafts require contextual user confirmation.',
+        };
+
+      // LEVEL 2: DESTRUCTIVE OR SENSITIVE SUBMISSION
+      case 'FORM_SUBMIT':
+        return {
+          allowed: true,
+          permissionLevel: PermissionLevel.LEVEL_1_CONTEXT_CONFIRMATION,
+          requiresApproval: !context.isAutonomousMission,
+          requiresTakeover: false,
+          riskLevel: RiskLevel.MEDIUM,
+          reason: 'Form submission requires final user confirmation before submitting.',
         };
 
       case 'FILE_DELETE':
         return {
           allowed: true,
+          permissionLevel: PermissionLevel.LEVEL_2_EXPLICIT_CONFIRMATION,
           requiresApproval: true,
           requiresTakeover: false,
           riskLevel: RiskLevel.HIGH,
-          reason: 'Broad deletion is not allowed by default; requires explicit confirmation and trash fallback.',
-        };
-
-      case 'SEND_COMMUNICATION':
-        return {
-          allowed: true,
-          requiresApproval: true,
-          requiresTakeover: false,
-          riskLevel: RiskLevel.HIGH,
-          reason: 'Sending emails or posting publicly requires explicit user approval.',
-        };
-
-      case 'INSTALL_CONNECTOR':
-        return {
-          allowed: true,
-          requiresApproval: true,
-          requiresTakeover: false,
-          riskLevel: RiskLevel.HIGH,
-          reason: 'Installing connectors or granting new capabilities requires explicit user approval.',
+          reason: 'Deleting files requires explicit confirmation.',
         };
 
       default:
         return {
           allowed: false,
+          permissionLevel: PermissionLevel.LEVEL_2_EXPLICIT_CONFIRMATION,
           requiresApproval: true,
           requiresTakeover: false,
           riskLevel: RiskLevel.HIGH,
-          reason: 'Unrecognized action category defaults to restricted state.',
+          reason: 'Unrecognized action category defaults to explicit confirmation.',
         };
     }
   }
@@ -143,16 +128,24 @@ export class DeterministicPolicyEngine {
       'raw_sql_query',
       'read_passwords',
       'extract_cookies',
+      'dump_keychain',
+      'bypass_captcha',
     ];
 
-    if (forbiddenTools.includes(toolName.toLowerCase())) {
+    const lowerTool = toolName.toLowerCase();
+    if (forbiddenTools.some(f => lowerTool.includes(f))) {
       return true;
     }
 
-    // Check if parameters contain dangerous code execution requests
-    const paramsStr = JSON.stringify(params).toLowerCase();
-    if (paramsStr.includes('javascript:') || paramsStr.includes('<script>') || paramsStr.includes('eval(')) {
-      return true;
+    if (params) {
+      const serialized = JSON.stringify(params).toLowerCase();
+      if (
+        serialized.includes('eval(') ||
+        serialized.includes('child_process') ||
+        serialized.includes('/etc/passwd')
+      ) {
+        return true;
+      }
     }
 
     return false;

@@ -104,8 +104,82 @@ export class OllamaGemmaProvider {
   }
 
   /**
+   * Unload a model from Ollama memory/VRAM by setting keep_alive to 0.
+   */
+  public async unloadModel(modelName?: string): Promise<boolean> {
+    const target = modelName || this.discoveredModel || this.modelName;
+    if (!target) return true;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${this.endpoint}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: target,
+          keep_alive: 0,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return res.ok;
+    } catch (err) {
+      console.warn(`[OllamaProvider] Failed to unload model "${target}":`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Preload / warm a model into Ollama memory/VRAM.
+   * Sending an empty prompt with model name instructs Ollama to load weights into GPU/RAM.
+   */
+  public async preloadModel(modelName?: string): Promise<boolean> {
+    const target = modelName || this.discoveredModel || this.modelName;
+    if (!target) return false;
+    try {
+      const controller = new AbortController();
+      // Allow up to 45 seconds for background model loading
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      const res = await fetch(`${this.endpoint}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: target,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return res.ok;
+    } catch (err) {
+      console.warn(`[OllamaProvider] Failed to preload model "${target}":`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Query all installed models from Ollama /api/tags
+   */
+  public async listInstalledModels(): Promise<Array<{ name: string; details?: { family?: string; parameter_size?: string } }>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${this.endpoint}/api/tags`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) return [];
+      const rawData = await res.json();
+      const parsed = OllamaTagsResponseSchema.safeParse(rawData);
+      return parsed.success ? parsed.data.models : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Health Check & Model Discovery
-   * Verifies Ollama is running and locates the installed Gemma model.
+   * Verifies Ollama is running and locates the installed target model.
    */
   public async checkHealth(): Promise<HealthCheckResult> {
     const startTime = Date.now();
@@ -136,25 +210,25 @@ export class OllamaGemmaProvider {
       const models = parsed.success ? parsed.data.models : [];
       const modelNames = models.map((m) => m.name);
 
-      // Look for Gemma models
-      const gemmaModel = this.findBestGemmaModel(models);
+      // Look for the configured model (strictly matching the requested model, no silent fallbacks)
+      const matchedModel = this.findBestGemmaModel(models);
 
-      if (!gemmaModel) {
+      if (!matchedModel) {
         return {
           status: 'MODEL_MISSING',
           endpoint: this.endpoint,
           availableModels: modelNames,
           latencyMs,
-          error: `No Gemma model found in local Ollama instance`,
+          error: `Model "${this.modelName}" is not installed in local Ollama instance.`,
         };
       }
 
-      this.discoveredModel = gemmaModel;
+      this.discoveredModel = matchedModel;
 
       return {
         status: 'AVAILABLE',
         endpoint: this.endpoint,
-        modelName: gemmaModel,
+        modelName: matchedModel,
         availableModels: modelNames,
         latencyMs,
       };
@@ -172,37 +246,45 @@ export class OllamaGemmaProvider {
   }
 
   /**
-   * Discover best matching Gemma model from available tags
+   * Discover best matching model from available tags.
+   * Strictly matches the requested model name (case-insensitively and tag variations)
+   * without falling back to a completely different model.
    */
   private findBestGemmaModel(
     models: Array<{ name: string; details?: { family?: string } }>
   ): string | null {
-    // 1. Exact match with configured name (case-insensitive)
+    const reqClean = this.modelName.trim().toLowerCase();
+
+    // 1. Exact match (case-insensitive, e.g. "gemma3:4b" matches "Gemma3:4b")
     const exact = models.find(
-      (m) => m.name.toLowerCase() === this.modelName.toLowerCase()
+      (m) => m.name.toLowerCase() === reqClean
     );
     if (exact) return exact.name;
 
-    // 2. Exact match with tag stripped (e.g. "gemma3" matches "gemma3:4b")
-    const baseTarget = this.modelName.split(':')[0].toLowerCase();
-    const tagMatch = models.find((m) =>
-      m.name.toLowerCase().startsWith(baseTarget)
-    );
+    // 2. Exact match ignoring ':latest' tag
+    const reqWithoutLatest = reqClean.replace(/:latest$/, '');
+    const tagMatch = models.find((m) => {
+      const mClean = m.name.toLowerCase().replace(/:latest$/, '');
+      return mClean === reqWithoutLatest;
+    });
     if (tagMatch) return tagMatch.name;
 
-    // 3. Any model with "gemma3" in name
-    const gemma3Match = models.find((m) =>
-      m.name.toLowerCase().includes('gemma3')
+    // 3. Match base name + tag prefix (e.g. "gemma4:e2b" matches "gemma4:e2b-instruct")
+    const basePrefixMatch = models.find((m) =>
+      m.name.toLowerCase().startsWith(reqClean)
     );
-    if (gemma3Match) return gemma3Match.name;
+    if (basePrefixMatch) return basePrefixMatch.name;
 
-    // 4. Any model with "gemma" in family or name
-    const anyGemma = models.find(
-      (m) =>
-        m.name.toLowerCase().includes('gemma') ||
-        (m.details?.family && m.details.family.toLowerCase().includes('gemma'))
-    );
-    if (anyGemma) return anyGemma.name;
+    // 4. Only if modelName was generically configured as "gemma" (not specific like "gemma4:e2b"),
+    // check any gemma model
+    if (reqClean === 'gemma' || reqClean === 'gemma:latest') {
+      const anyGemma = models.find(
+        (m) =>
+          m.name.toLowerCase().includes('gemma') ||
+          (m.details?.family && m.details.family.toLowerCase().includes('gemma'))
+      );
+      if (anyGemma) return anyGemma.name;
+    }
 
     return null;
   }
@@ -238,7 +320,7 @@ export class OllamaGemmaProvider {
         ? [{ role: 'user', content: messages }]
         : messages;
     const model = await this.ensureModel();
-    const timeoutMs = options.timeoutMs ?? 30000;
+    const timeoutMs = options.timeoutMs ?? 120000;
 
     const abortController = new AbortController();
     let isTimedOut = false;
@@ -307,7 +389,7 @@ export class OllamaGemmaProvider {
     options: OllamaRequestOptions = {}
   ): AsyncGenerator<string, void, unknown> {
     const model = await this.ensureModel();
-    const timeoutMs = options.timeoutMs ?? 45000;
+    const timeoutMs = options.timeoutMs ?? 120000;
 
     const abortController = new AbortController();
     let isTimedOut = false;

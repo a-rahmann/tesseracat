@@ -1,3 +1,31 @@
+export interface UserStorageContext {
+  userName?: string;
+  userCity?: string;
+  activeWorkspace?: string;
+  savedWorkspaces?: string[];
+  notesSummary?: Array<{ title: string; preview: string }>;
+  trelloTasksSummary?: Array<{ column: string; count: number; sampleCards?: string[] }>;
+  topShortcuts?: string[];
+  inferredInterests?: string[];
+  credentialVaultDomains?: string[];
+  capabilitiesOverview?: string;
+}
+
+export interface AttachedFileContext {
+  name: string;
+  path?: string;
+  size?: number;
+  type?: 'document' | 'image' | 'video' | 'audio' | 'code' | 'other';
+  textSnippet?: string;
+}
+
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: number;
+  intent?: string;
+}
+
 export interface RawPageContext {
   url?: string;
   title?: string;
@@ -5,6 +33,9 @@ export interface RawPageContext {
   mainVisibleText?: string;
   visibleTables?: string[];
   selectedText?: string;
+  userStorage?: UserStorageContext;
+  attachedFiles?: AttachedFileContext[];
+  conversationHistory?: ConversationTurn[];
 }
 
 export interface SanitizedPageContext {
@@ -234,8 +265,61 @@ export class ContextBuilder {
       parts.push(`- Tables:\n${sanitized.visibleTables.join('\n---\n')}`);
     }
 
-    if (parts.length === 0) return '';
+    let result = '';
 
-    return `\n--- ACTIVE PAGE CONTEXT (Sanitized & Redacted) ---\n${parts.join('\n\n')}\n--- END PAGE CONTEXT ---\n`;
+    if (parts.length > 0) {
+      result += `\n--- ACTIVE PAGE BACKGROUND (Supplemental reference if user asks about current screen; ignore for general knowledge & off-screen queries) ---\n${parts.join('\n\n')}\n--- END PAGE BACKGROUND ---\n`;
+    }
+
+    if (raw.userStorage) {
+      const u = raw.userStorage;
+      const uParts: string[] = [];
+      uParts.push(`- User Identity: ${u.userName || 'Abdul'}`);
+      if (u.userCity) uParts.push(`- Saved Location: ${u.userCity}`);
+      if (u.activeWorkspace) uParts.push(`- Active Workspace: ${u.activeWorkspace}`);
+      if (u.savedWorkspaces && u.savedWorkspaces.length > 0) {
+        uParts.push(`- Saved Workspaces: ${u.savedWorkspaces.join(', ')}`);
+      }
+      if (u.notesSummary && u.notesSummary.length > 0) {
+        uParts.push(`- Local Stored Notes: ${u.notesSummary.map(n => `"${n.title}"`).join(', ')}`);
+      }
+      if (u.trelloTasksSummary && u.trelloTasksSummary.length > 0) {
+        uParts.push(`- Local Kanban Tasks: ${u.trelloTasksSummary.map(t => `${t.column} (${t.count} items)`).join(', ')}`);
+      }
+      if (u.topShortcuts && u.topShortcuts.length > 0) {
+        uParts.push(`- Saved Shortcuts: ${u.topShortcuts.join(', ')}`);
+      }
+      if (u.inferredInterests && u.inferredInterests.length > 0) {
+        uParts.push(`- Inferred Interests: ${u.inferredInterests.join(', ')}`);
+      }
+      if (u.credentialVaultDomains && u.credentialVaultDomains.length > 0) {
+        uParts.push(`- Offline Credential Vault: Saved encrypted login domains: ${u.credentialVaultDomains.join(', ')} (Passwords are securely encrypted on disk and never exposed)`);
+      }
+      uParts.push(`- Storage Architecture: Local storage on device (SQLite + localStorage + CredentialVault). 100% offline, zero cloud telemetry, zero remote tracking.`);
+
+      result += `\n--- LOCAL USER PROFILE & STORAGE (Device-Only Storage) ---\n${uParts.join('\n')}\n--- END LOCAL USER PROFILE & STORAGE ---\n`;
+    }
+
+    if (raw.attachedFiles && raw.attachedFiles.length > 0) {
+      const fParts = raw.attachedFiles.map((f, idx) => {
+        let details = `- File ${idx + 1}: "${f.name}" [${f.type || 'document'}]`;
+        if (f.size) details += ` (${Math.round(f.size / 1024)} KB)`;
+        if (f.path) details += ` - Path: ${f.path}`;
+        if (f.textSnippet) details += `\n  Content Preview:\n  """\n  ${f.textSnippet.substring(0, 1000)}\n  """`;
+        return details;
+      });
+      result += `\n--- ATTACHED USER FILES (Documents / Images / Videos / Code) ---\n${fParts.join('\n\n')}\n--- END ATTACHED FILES ---\n`;
+    }
+
+    if (raw.conversationHistory && raw.conversationHistory.length > 0) {
+      const recent = raw.conversationHistory.slice(-8);
+      const hParts = recent.map((turn) => {
+        const speaker = turn.role === 'user' ? 'User' : 'Assistant';
+        return `${speaker}: ${turn.content}`;
+      });
+      result += `\n--- PREVIOUS CONVERSATION CONTEXT (Reference for follow-ups, pronouns & continuity) ---\n${hParts.join('\n')}\n--- END PREVIOUS CONVERSATION ---\n`;
+    }
+
+    return result;
   }
 }

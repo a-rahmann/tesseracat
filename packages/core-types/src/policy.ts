@@ -5,6 +5,15 @@ export enum RiskLevel {
   CRITICAL = 'CRITICAL',
 }
 
+export enum PermissionLevel {
+  /** Level 0: Automatic execution (read page, scroll, navigate, search, inspect DOM, harmless clicks) */
+  LEVEL_0_AUTOMATIC = 0,
+  /** Level 1: Contextual confirmation (file download, upload, modify document, send email draft) */
+  LEVEL_1_CONTEXT_CONFIRMATION = 1,
+  /** Level 2: Explicit confirmation required (credentials, password entry, financial action, purchase, delete data) */
+  LEVEL_2_EXPLICIT_CONFIRMATION = 2,
+}
+
 export type ActionCategory =
   | 'READ_PAGE'
   | 'TAB_NAVIGATION'
@@ -25,6 +34,7 @@ export interface PolicyRule {
   category: ActionCategory;
   description: string;
   defaultRisk: RiskLevel;
+  permissionLevel: PermissionLevel;
   requiresUserApproval: boolean;
   requiresUserTakeover: boolean;
   isBlockedByDefault: boolean;
@@ -43,9 +53,29 @@ export interface PolicyContext {
 
 export interface PolicyDecision {
   allowed: boolean;
+  permissionLevel: PermissionLevel;
   requiresApproval: boolean;
   requiresTakeover: boolean;
   riskLevel: RiskLevel;
   ruleId?: string;
   reason: string;
+}
+
+export interface PermissionRequest {
+  id: string;
+  taskId: string;
+  stepId?: string;
+  domain: string;
+  permissionLevel: PermissionLevel;
+  title: string;
+  description: string;
+  actionDetails?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface PermissionResponse {
+  requestId: string;
+  approved: boolean;
+  rememberChoice?: boolean;
+  decidedAt: string;
 }

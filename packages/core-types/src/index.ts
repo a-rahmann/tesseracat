@@ -3,3 +3,4 @@ export * from './policy.js';
 export * from './tool.js';
 export * from './model-provider.js';
 export * from './profile.js';
+export * from './element-target.js';
