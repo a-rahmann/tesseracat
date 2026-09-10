@@ -303,8 +303,10 @@ export class VoiceGrammarCorrector {
       // Audio / Video / Media
       { pattern: /\bloose\s+yourself\b/gi, replacement: 'lose yourself', reason: 'homophone:lose' },
       { pattern: /\bloose\s+my\b/gi, replacement: 'lose my', reason: 'homophone:lose' },
-      { pattern: /\b(?:the\s+ransom|a\s+ransom|ransom)\s+(?:video|vide|clip)\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
-      { pattern: /\b(?:see\s+you\s+around|around)\s+(?:the|a)?\s*(?:video|vide)\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
+      { pattern: /\b(?:the\s+ransom|a\s+ransom|ransom|randome)\s+(?:video|vide|clip)s?\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
+      { pattern: /\b(?:see\s+you\s+around|around)\s+(?:the|a)?\s*(?:video|vide)s?\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
+      { pattern: /\b(?:there\s+are\s+no|we\s+are\s+on\s+the|they\s+are\s+on\s+the|where\s+are\s+the|clear\s+on\s+the|clear\s+random|player\s+a\s+random|player\s+random|player)\s+videos?\b/gi, replacement: 'play a random video', reason: 'acoustic:play_random_video' },
+      { pattern: /\b(?:play\s+are|play\s+in|play\s+on|play\s+run\s+the)\s+random\s+videos?\b/gi, replacement: 'play a random video', reason: 'acoustic:play_random_video' },
       { pattern: /\bsound\s+trek\b/gi, replacement: 'soundtrack', reason: 'homophone:soundtrack' },
       { pattern: /\bvalume\b/gi, replacement: 'volume', reason: 'spelling:volume' },
 
@@ -352,11 +354,13 @@ export class VoiceGrammarCorrector {
     // e.g. "subscribe [channel]" -> "subscribe to [channel]"
     text = text.replace(/\bsubscribe\s+(?!to\b)([a-z0-9_-]+)\b/gi, 'subscribe to $1');
 
-    // e.g. "open youtube and video" -> "open youtube and play a random video"
+    // Compound sentence synthesis for YouTube playback
+    text = text.replace(/\bopen\s+youtube(?:\s+and)?\s+(?:there\s+are\s+no|we\s+are\s+on\s+the|they\s+are\s+on\s+the|where\s+are\s+the|clear\s+on\s+the|clear\s+random)\s+videos?\b/gi, 'open youtube and play a random video');
+    text = text.replace(/\bopen\s+youtube(?:\s+and)?\s+(?:play\s+a\s+random\s+video|play\s+random\s+video|play\s+a\s+video|play\s+video)\b/gi, 'open youtube and play a random video');
     text = text.replace(/\bopen\s+youtube(?:\s+and)?\s+(?:a\s+)?video(?:\s+bye)?\b/gi, 'open youtube and play a random video');
-    text = text.replace(/\bopen\s+youtube(?:\s+and)?\s+(?:k\s+|c\s+|see\s+)?(?:a\s+)?random\s+video\b/gi, 'open youtube and play a random video');
-    text = text.replace(/\b(?:k|c)\s+(?:a\s+)?random\s+video\b/gi, 'play a random video');
-    text = text.replace(/\bopen\s+youtube\s+play\s+(?:a\s+)?(?:random\s+)?video\b/gi, 'open youtube and play a random video');
+    text = text.replace(/\bopen\s+youtube(?:\s+and)?\s+(?:k\s+|c\s+|see\s+)?(?:a\s+)?(?:ransom|random|randome)\s+videos?\b/gi, 'open youtube and play a random video');
+    text = text.replace(/\b(?:k|c)\s+(?:a\s+)?(?:ransom|random|randome)\s+videos?\b/gi, 'play a random video');
+    text = text.replace(/\bopen\s+youtube\s+play\s+(?:a\s+)?(?:random\s+)?videos?\b/gi, 'open youtube and play a random video');
 
     // Stage 8: Word-level Phonetic Fuzzy Matching via Levenshtein / Soundex for unmatched words
     const words = text.split(/\s+/);

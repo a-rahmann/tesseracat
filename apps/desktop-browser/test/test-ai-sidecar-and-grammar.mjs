@@ -48,6 +48,26 @@ const testCases = [
     expected: "open youtube and play a random video",
   },
   {
+    input: "Open YouTube and there are no videos",
+    expected: "open youtube and play a random video",
+  },
+  {
+    input: "open YouTube and we are on the video",
+    expected: "open youtube and play a random video",
+  },
+  {
+    input: "open YouTube and they are on the video",
+    expected: "open youtube and play a random video",
+  },
+  {
+    input: "open YouTube and clear on the video",
+    expected: "open youtube and play a random video",
+  },
+  {
+    input: "k the ransom video",
+    expected: "play a random video",
+  },
+  {
     input: "listen too coldplay on spotfy",
     expected: "listen to coldplay on spotify",
   },

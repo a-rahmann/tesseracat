@@ -34,17 +34,18 @@ class YouTubeAdapter {
         const automator = browser_automator_js_1.BrowserAutomator.getInstance();
         const media = media_controller_js_1.MediaController.getInstance();
         // 1. Wait for video results to render on YouTube (both search and home feed)
-        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"]', 4000);
+        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"]', 4500);
         // 2. Locate, click, and navigate directly to target video link
         const selectScript = `
       (() => {
-        const candidates = Array.from(document.querySelectorAll(
-          'ytd-rich-item-renderer a#thumbnail, ytd-video-renderer a#thumbnail, ytd-rich-grid-media a#thumbnail, a#video-title, a#video-title-link, a[href*="/watch"]'
+        const queryCandidates = () => Array.from(document.querySelectorAll(
+          'ytd-rich-item-renderer a#thumbnail, ytd-rich-grid-media a#thumbnail, ytd-video-renderer a#thumbnail, a#video-title-link, a#video-title, ytd-thumbnail a, a[href*="/watch"]'
         )).filter(el => {
           const h = el.getAttribute('href') || (el as any).href || '';
           return h.includes('/watch') && !h.includes('/shorts/');
         });
 
+        let candidates = queryCandidates();
         const target = (candidates[${Math.max(0, index - 1)}] || candidates[0]) as HTMLElement;
         if (target) {
           const href = target.getAttribute('href') || (target as any).href;
@@ -54,7 +55,11 @@ class YouTubeAdapter {
         return { found: false };
       })()
     `;
-        const res = await automator.executeScript(selectScript);
+        let res = await automator.executeScript(selectScript);
+        if (!res?.found) {
+            await new Promise(r => setTimeout(r, 1200));
+            res = await automator.executeScript(selectScript);
+        }
         console.log('[YouTubeAdapter] Located video search result:', res);
         if (res?.found && res?.href) {
             const fullUrl = res.href.startsWith('http') ? res.href : `https://www.youtube.com${res.href}`;

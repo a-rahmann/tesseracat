@@ -283,18 +283,17 @@ class AgentRuntime {
                     }).catch(() => { });
                 }
                 else if (fastPathGoal.entities.platform === 'YouTube' || !fastPathGoal.entities.platform) {
-                    if (query && query !== 'popular' && query !== 'trending') {
+                    const isRandomOrGeneric = !query || /^(?:a\s+)?(?:random|any|some)?\s*(?:video|vide)?$/i.test(query) || query === 'popular' || query === 'trending';
+                    if (!isRandomOrGeneric && query) {
                         youtube_js_1.YouTubeAdapter.searchAndPlay(query, fastPathGoal.entities.index || 1).catch(err => {
                             console.warn('[AgentRuntime] Fast-path searchAndPlay warning:', err);
                         });
                     }
-                    else if (fastPathGoal.suggestedTargetUrl) {
-                        browser_automator_js_1.BrowserAutomator.getInstance().navigate(fastPathGoal.suggestedTargetUrl).then(async () => {
-                            await youtube_js_1.YouTubeAdapter.playResult(1);
-                        }).catch(() => { });
-                    }
                     else {
-                        media_controller_js_1.MediaController.getInstance().play().catch(() => { });
+                        const navUrl = fastPathGoal.suggestedTargetUrl || 'https://www.youtube.com';
+                        browser_automator_js_1.BrowserAutomator.getInstance().navigate(navUrl).then(async () => {
+                            await youtube_js_1.YouTubeAdapter.playResult(Math.floor(Math.random() * 3) + 1);
+                        }).catch(() => { });
                     }
                 }
                 else if (fastPathGoal.suggestedTargetUrl) {
@@ -431,6 +430,10 @@ class AgentRuntime {
             profiler.markNlu(false, true);
             profiler.markPlanning();
             console.log(`[AgentRuntime] Pipelined compound route triggered for "${fastPathGoal.goal}" - 0ms planning latency!`);
+            if (fastPathGoal.spokenAcknowledgment) {
+                profiler.markTtsStart(fastPathGoal.spokenAcknowledgment);
+                this.speak(fastPathGoal.spokenAcknowledgment).finally(() => profiler.markTtsEnd()).catch(() => { });
+            }
             // Pipelined First Browser Action: Immediately navigate to target URL!
             if (fastPathGoal.suggestedTargetUrl) {
                 profiler.markFirstAction(`Navigating to ${fastPathGoal.suggestedTargetUrl}`);

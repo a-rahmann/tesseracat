@@ -12,6 +12,13 @@ class NavigationSkill {
     description = 'Browser navigation, spatial clicking, ordinal element selection, and scrolling';
     canHandle(goal) {
         const lower = goal.toLowerCase();
+        // Do not hijack compound commands or media actions
+        if (/\bopen\s+(?:youtube|spotify|google|amazon|netflix|twitter|reddit)\s+(?:and|&)\b/i.test(lower)) {
+            return false;
+        }
+        if (/\b(?:play|listen\s+to|watch)\b/i.test(lower) && /\b(?:youtube|video|song|track)\b/i.test(lower)) {
+            return false;
+        }
         return /^(?:go\s+back|go\s+forward|reload|refresh|scroll|click|open|switch\s+to)\b/i.test(lower) ||
             lower.includes('click the') ||
             lower.includes('open the second') ||
