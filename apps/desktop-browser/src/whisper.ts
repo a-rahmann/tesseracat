@@ -76,12 +76,12 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   mean /= sampleCount;
   for (let i = 0; i < sampleCount; i++) audioFloat32[i] -= mean;
 
-  // 2. Trim leading and trailing silence to eliminate padding hallucinations and speed up inference
-  const trimThreshold = Math.max(0.006, rms * 0.2);
+  // 2. Trim leading and trailing silence without clipping the initial consonant (300ms pre-roll)
+  const trimThreshold = Math.max(0.005, rms * 0.1);
   let speechStart = 0;
   for (let i = 0; i < sampleCount; i++) {
     if (Math.abs(audioFloat32[i]) >= trimThreshold) {
-      speechStart = Math.max(0, i - 3200); // 200ms pre-roll
+      speechStart = Math.max(0, i - 4800); // 300ms pre-roll preserves initial plosive consonants (e.g. /p/ in 'play')
       break;
     }
   }
@@ -97,19 +97,19 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
   const activeAudio = audioFloat32.slice(speechStart, speechEnd);
   console.log(`[Whisper] Active speech segment: ${activeAudio.length} samples (~${(activeAudio.length / 16000).toFixed(2)}s, trimmed ${speechStart} leading samples)`);
 
-  if (activeAudio.length < 1200) {
-    console.log('[Whisper] Rejected: trimmed active speech too short (< 0.075s)');
+  if (activeAudio.length < 1600) {
+    console.log('[Whisper] Rejected: trimmed active speech too short (< 0.1s)');
     return '';
   }
 
-  // 3. Peak normalize to 0.75 and clamp to [-1.0, 1.0] for optimal ONNX Mel filterbank extraction
+  // 3. Peak normalize safely (max 6x boost) to prevent room hiss from being amplified into speech
   let peak = 0;
   for (let i = 0; i < activeAudio.length; i++) {
     const a = Math.abs(activeAudio[i]);
     if (a > peak) peak = a;
   }
   if (peak > 0.001) {
-    const normScale = Math.min(25.0, 0.75 / peak);
+    const normScale = Math.min(6.0, 0.85 / peak);
     for (let i = 0; i < activeAudio.length; i++) {
       let v = activeAudio[i] * normScale;
       if (v > 1.0) v = 1.0;

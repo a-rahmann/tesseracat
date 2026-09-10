@@ -30,6 +30,9 @@ export declare class WakeWordDetector {
     private silenceFramesCount;
     private phoneticStages;
     private stageTimings;
+    private peakUtteranceRms;
+    private voicedFramesCount;
+    private sibilantFramesCount;
     private onWakeCallback;
     constructor(config?: WakeWordConfig);
     setEnabled(enabled: boolean): void;

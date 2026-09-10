@@ -184,7 +184,14 @@ class VoiceManager {
             this.nativeSampleRate = sampleRate;
             this.isAudioPipelineReady = true;
             this.transitionTo('WAKE_LISTENING');
-            console.log('[VoiceManager] Audio pipeline live & listening for wake phrase.');
+            // Inhibit wake detector for first 2000ms while microphone AGC and AudioContext baseline calibrate
+            this.wakeDetector.setEnabled(false);
+            setTimeout(() => {
+                if (this.isWakeWordActive) {
+                    this.wakeDetector.setEnabled(true);
+                    console.log('[VoiceManager] Microphone calibrated & listening for wake phrase.');
+                }
+            }, 2000);
             return true;
         }
         catch (err) {
@@ -283,17 +290,28 @@ class VoiceManager {
         this.vad.reset();
         // 1.8s grace window allows user to begin command without premature silence cutoff
         this.wakeGraceUntil = Date.now() + 1800;
-        // Immediately enter COMMAND_LISTENING to capture the user's command
-        this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
-        // Safety timeout (9.5 seconds max command)
+        // Transition to WAKE_DETECTED first so UI chime and animation trigger cleanly!
+        this.transitionTo('WAKE_DETECTED', { detail: result.phrase });
+        setTimeout(() => {
+            if (this.currentState === 'WAKE_DETECTED') {
+                this.transitionTo('COMMAND_LISTENING', { detail: 'Listening for command' });
+            }
+        }, 250);
+        // Inactivity timeout: if user does not speak within 4.5s, return to wake listening without invoking Whisper
         if (this.maxCommandDurationTimer)
             clearTimeout(this.maxCommandDurationTimer);
         this.maxCommandDurationTimer = setTimeout(() => {
-            if (this.currentState === 'COMMAND_LISTENING') {
-                console.log('[VoiceManager] Max command duration reached.');
-                this.finishCommandRecording();
+            if (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED') {
+                if (!this.hasDetectedUserSpeech) {
+                    console.log('[VoiceManager] Command listening timed out (no user speech detected within 4.5s). Returning to wake listening.');
+                    this.resetToWakeListening();
+                }
+                else {
+                    console.log('[VoiceManager] Max command duration reached.');
+                    this.finishCommandRecording();
+                }
             }
-        }, 9500);
+        }, 4500);
     }
     async startPushToTalk() {
         if (!this.isAudioPipelineReady) {
@@ -331,7 +349,7 @@ class VoiceManager {
             clearTimeout(this.maxCommandDurationTimer);
             this.maxCommandDurationTimer = null;
         }
-        if (this.currentState !== 'COMMAND_LISTENING')
+        if (this.currentState !== 'COMMAND_LISTENING' && this.currentState !== 'WAKE_DETECTED')
             return;
         // Reject audio if duration is < 0.15s (2400 samples at 16kHz)
         if (this.commandAudioChunks.length === 0 || this.totalCommandSamples < 2400) {
@@ -358,8 +376,8 @@ class VoiceManager {
             sumSq += fullBuffer[i] * fullBuffer[i];
         }
         const avgRms = Math.sqrt(sumSq / fullBuffer.length);
-        // Only skip Whisper if buffer is absolute silence / empty noise
-        const hasVoiceEnergy = this.hasDetectedUserSpeech || maxAmp >= 0.008 || avgRms >= 0.001;
+        // Strictly skip Whisper if no active human speech was detected by VAD or amplitude is too quiet
+        const hasVoiceEnergy = this.hasDetectedUserSpeech && (maxAmp >= 0.025 || avgRms >= 0.005);
         if (!hasVoiceEnergy) {
             console.log(`[VoiceManager] No command speech detected (hasSpeech: ${this.hasDetectedUserSpeech}, MaxAmp: ${maxAmp.toFixed(4)}, RMS: ${avgRms.toFixed(5)}), skipping Whisper.`);
             this.resetToWakeListening();
