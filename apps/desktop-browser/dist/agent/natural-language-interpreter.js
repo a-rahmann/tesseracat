@@ -639,8 +639,8 @@ Output strictly valid JSON matching this schema:
                 isCoherent: true,
             };
         }
-        // Video on YouTube: "play a video on youtube", "play video on youtube", "play a random video"
-        if (/^(?:play\s+(?:a\s+)?(?:random\s+)?video(?:\s+on\s+youtube)?|play\s+youtube\s+(?:random\s+)?video)$/i.test(text)) {
+        // Video on YouTube: "play a video on youtube", "play video on youtube", "play a random video", "play specific video"
+        if (/^(?:play\s+(?:a\s+)?(?:random\s+|specific\s+)?(?:video|vide)(?:\s+(?:on|from|in)\s+youtube)?|play\s+youtube\s+(?:random\s+|specific\s+)?(?:video|vide))$/i.test(text)) {
             const targetUrl = 'https://www.youtube.com';
             return {
                 rawUserText: cleanText,
@@ -653,19 +653,39 @@ Output strictly valid JSON matching this schema:
                 isCompound: false,
                 isFastPath: true,
                 suggestedTargetUrl: targetUrl,
+                initialPlan: [
+                    {
+                        stepNumber: 1,
+                        description: 'Navigate to YouTube',
+                        toolName: 'browser.navigate',
+                        parameters: { url: targetUrl },
+                        expectedOutcome: 'YouTube loaded',
+                        status: 'PENDING',
+                    },
+                    {
+                        stepNumber: 2,
+                        description: 'Play a video on YouTube',
+                        toolName: 'youtube.playResult',
+                        parameters: { index: 1 },
+                        expectedOutcome: 'Video playback started',
+                        status: 'PENDING',
+                    },
+                ],
                 spokenAcknowledgment: 'Playing a video on YouTube.',
                 confidence: 1.0,
                 isCoherent: true,
             };
         }
-        // YouTube specific query: "play <query> on youtube"
-        const playYtMatch = text.match(/^(?:play|listen\s+to)\s+(?:the\s+)?(?:song\s+|video\s+)?(.+?)(?:\s+(?:song|video))?\s+on\s+youtube$/i);
+        // YouTube specific query: "play <query> on youtube" (or from/in youtube)
+        const playYtMatch = text.match(/^(?:play|listen\s+to)\s+(?:the\s+)?(?:song\s+|video\s+)?(.+?)(?:\s+(?:song|video))?\s+(?:on|from|in)\s+youtube$/i);
         if (playYtMatch) {
-            const query = playYtMatch[1].trim();
-            const targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+            const rawQuery = playYtMatch[1].trim();
+            const isRandomOrGeneric = /^(?:a\s+)?(?:random|specific)?\s*(?:video|vide|song)?$/i.test(rawQuery);
+            const query = isRandomOrGeneric ? 'popular' : rawQuery;
+            const targetUrl = isRandomOrGeneric ? 'https://www.youtube.com' : `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
             return {
                 rawUserText: cleanText,
-                goal: `Play "${query}" on YouTube`,
+                goal: isRandomOrGeneric ? 'Play a video on YouTube' : `Play "${query}" on YouTube`,
                 intentCategory: 'MEDIA_CONTROL',
                 fastPathAction: 'PLAY',
                 entities: { platform: 'YouTube', query },
@@ -674,7 +694,25 @@ Output strictly valid JSON matching this schema:
                 isCompound: false,
                 isFastPath: true,
                 suggestedTargetUrl: targetUrl,
-                spokenAcknowledgment: `Playing ${query} on YouTube.`,
+                initialPlan: [
+                    {
+                        stepNumber: 1,
+                        description: isRandomOrGeneric ? 'Navigate to YouTube' : `Navigate to YouTube for "${query}"`,
+                        toolName: 'browser.navigate',
+                        parameters: { url: targetUrl },
+                        expectedOutcome: 'YouTube loaded',
+                        status: 'PENDING',
+                    },
+                    {
+                        stepNumber: 2,
+                        description: isRandomOrGeneric ? 'Play a video on YouTube' : `Play video result for "${query}"`,
+                        toolName: 'youtube.playResult',
+                        parameters: { index: 1 },
+                        expectedOutcome: 'Video playback started',
+                        status: 'PENDING',
+                    },
+                ],
+                spokenAcknowledgment: isRandomOrGeneric ? 'Playing a video on YouTube.' : `Playing ${query} on YouTube.`,
                 confidence: 1.0,
                 isCoherent: true,
             };
@@ -997,7 +1035,9 @@ Output strictly valid JSON matching this schema:
             .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/i, '')
             .replace(/^(?:please\s+)/i, '')
             .replace(/\b(?:open|go\s+to|visit)\s+(?:your|the|my)\s+(youtube|instagram|google|gmail|amazon|twitter|x|reddit|netflix|spotify)\b/i, 'open $1')
-            .replace(/\b(?:pay|lay|pray)\s+((?:a\s+)?(?:random\s+)?(?:video|song|track|music|movie))\b/i, 'play $1')
+            .replace(/\b(?:pay|lay|pray|plea)\s+((?:a\s+)?(?:random\s+|specific\s+)?(?:video|vide|song|track|music|movie))\b/i, 'play $1')
+            .replace(/\bvide\b/i, 'video')
+            .replace(/\b(?:from|in|at)\s+youtube\b/i, 'on youtube')
             .replace(/['"]/g, '')
             .replace(/[?.!]+$/g, '')
             .trim();

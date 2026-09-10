@@ -684,8 +684,8 @@ Give a concise 2-sentence spoken response answering their question based on actu
         const automator = browser_automator_js_1.BrowserAutomator.getInstance();
         const media = media_controller_js_1.MediaController.getInstance();
         if (cmd.location === 'youtube' && cmd.query) {
-            const isRandom = /^(?:a\s+)?(?:random\s+)?video$/i.test(cmd.query);
-            if (isRandom) {
+            const isRandomOrGeneric = /^(?:a\s+)?(?:random|specific)?\s*(?:video|vide)?$/i.test(cmd.query);
+            if (isRandomOrGeneric) {
                 this.updateState({ status: 'executing', currentAction: 'Opening YouTube and playing a video...', progress: 0.4 });
                 await automator.navigate('https://www.youtube.com');
                 const played = await youtube_js_1.YouTubeAdapter.playResult(Math.floor(Math.random() * 3) + 1);

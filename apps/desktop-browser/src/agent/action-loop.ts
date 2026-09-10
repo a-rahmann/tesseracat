@@ -275,8 +275,8 @@ Output strictly valid JSON matching this schema:
         callbacks.onStatus(decision.reason || (decision as any).thought);
       }
 
-      // Check for mission completion
-      if (decision.isFinalStep || decision.tool === 'task.finish' || decision.type === 'complete') {
+      // Check for mission completion without further tool execution
+      if (decision.tool === 'task.finish' || decision.type === 'complete') {
         const summary = decision.reason || (decision as any).thought || 'Mission completed successfully.';
         callbacks.onStep(stepNumber, summary, 'SUCCESS');
         taskManager.transitionState('COMPLETED', { currentActionDescription: summary });
@@ -359,6 +359,15 @@ Output strictly valid JSON matching this schema:
           contextData: { lastAction: lastActionInfo },
           timestamp: Date.now(),
         });
+
+        // If this was the final pre-planned step, finish mission now AFTER executing it!
+        if (decision.isFinalStep) {
+          const summary = decision.reason || (decision as any).thought || `Completed mission: ${goal}`;
+          callbacks.onStep(stepNumber, summary, 'SUCCESS');
+          taskManager.transitionState('COMPLETED', { currentActionDescription: summary });
+          callbacks.onFinish(summary);
+          return { success: true, summary };
+        }
       } catch (err: any) {
         console.error(`[ActionLoop] Step ${stepNumber} tool error:`, err);
         callbacks.onStep(stepNumber, `${tool.name} failed: ${err.message}`, 'FAILED');

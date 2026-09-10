@@ -109,7 +109,7 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
     if (a > peak) peak = a;
   }
   if (peak > 0.001) {
-    const normScale = Math.min(4.0, 0.75 / peak);
+    const normScale = Math.min(25.0, 0.75 / peak);
     for (let i = 0; i < activeAudio.length; i++) {
       let v = activeAudio[i] * normScale;
       if (v > 1.0) v = 1.0;

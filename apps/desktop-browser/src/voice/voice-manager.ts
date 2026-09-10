@@ -345,7 +345,7 @@ export class VoiceManager {
         console.log(`[VoiceManager] Wake verification transcription: "${clean}"`);
 
         // Check if transcription matches wake phrase variants
-        const isWakeMatch = /\b(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert)\b/i.test(clean);
+        const isWakeMatch = /\b(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert|passeract|cassette|tessa|desire)\b/i.test(clean);
 
         if (!isWakeMatch) {
           console.log(`[VoiceManager] Wake candidate rejected by ASR gate ("${clean}" != wake word). Preventing phantom wake.`);
@@ -354,7 +354,7 @@ export class VoiceManager {
         }
 
         // Single-shot command detection: e.g. "Hey Tesseract, open youtube and play a video"
-        const singleShotRemainder = clean.replace(/^(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert)[,.]?\s*/i, '').trim();
+        const singleShotRemainder = clean.replace(/^(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert|passeract|cassette|tessa|desire)[,.]?\s*/i, '').trim();
         if (singleShotRemainder.length >= 3) {
           console.log(`[VoiceManager] Single-shot wake + command detected: "${singleShotRemainder}". Executing immediately.`);
           this.transitionTo('EXECUTING', { detail: singleShotRemainder });
@@ -407,11 +407,14 @@ export class VoiceManager {
     if (this.currentState === 'SPEAKING') {
       this.triggerInterruption();
     }
-    this.commandAudioChunks = [];
-    this.totalCommandSamples = 0;
+    // Seed with pre-roll audio so the very first syllable is preserved
+    this.commandAudioChunks = [...this.preRollChunks];
+    this.totalCommandSamples = this.preRollSamples;
+    this.preRollChunks = [];
+    this.preRollSamples = 0;
     this.hasDetectedUserSpeech = false;
     this.vad.reset();
-    this.wakeGraceUntil = Date.now() + 1000;
+    this.wakeGraceUntil = Date.now() + 1500;
     this.transitionTo('COMMAND_LISTENING', { detail: 'Push to talk' });
 
     if (this.maxCommandDurationTimer) clearTimeout(this.maxCommandDurationTimer);
@@ -627,10 +630,14 @@ export class VoiceManager {
 
       if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey) {
         const duration = Date.now() - this.holdStartTimestamp;
-        // If user held 'T' for >= 400ms (Push-to-talk hold behavior), release finishes recording!
-        if (duration >= 400 && (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED')) {
-          console.log(`[Hotkey] T released after ${duration}ms hold -> stopping command recording`);
-          this.finishCommandRecording();
+        // If user held 'T' for >= 350ms (Push-to-talk hold behavior), release finishes recording!
+        if (duration >= 350 && (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED')) {
+          console.log(`[Hotkey] T released after ${duration}ms hold -> finalizing command recording with 220ms grace`);
+          setTimeout(() => {
+            if (this.currentState === 'COMMAND_LISTENING') {
+              this.finishCommandRecording();
+            }
+          }, 220);
         }
       }
     });

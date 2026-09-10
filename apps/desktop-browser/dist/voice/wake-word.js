@@ -34,6 +34,8 @@ class WakeWordDetector {
         this.debounceMs = config.debounceMs ?? 1500;
         this.isEnabled = config.enabled ?? true;
         this.preRollBuffer = new Float32Array(this.preRollSamples);
+        if (config.onWake)
+            this.onWakeCallback = config.onWake;
     }
     setEnabled(enabled) {
         this.isEnabled = enabled;
@@ -80,23 +82,24 @@ class WakeWordDetector {
             highFreqEnergy += diff * diff;
         }
         const highFreqRatio = highFreqEnergy / (sumSq + 1e-6);
-        const speechThreshold = Math.max(0.024, this.baselineRms * 2.5);
+        const speechThreshold = Math.max(0.010, this.baselineRms * 1.5);
         if (!this.isTrackingUtterance) {
-            // Background noise floor smoothing
-            this.baselineRms = this.baselineRms * 0.992 + rms * 0.008;
+            // Only smooth background noise floor during ambient silence
+            if (rms < speechThreshold) {
+                this.baselineRms = this.baselineRms * 0.992 + rms * 0.008;
+            }
             // Fill circular pre-roll buffer
             for (let i = 0; i < chunk.length; i++) {
                 this.preRollBuffer[this.preRollIndex] = chunk[i];
                 this.preRollIndex = (this.preRollIndex + 1) % this.preRollSamples;
             }
             // Detect speech onset for intentional wake word
-            if (rms > speechThreshold) {
+            if (rms >= speechThreshold) {
                 this.isTrackingUtterance = true;
                 this.silenceFramesCount = 0;
                 this.utteranceChunks = [];
                 this.totalUtteranceSamples = 0;
-                this.phoneticStages = [false, false, false, false];
-                // Linearize pre-roll buffer
+                // Linearize pre-roll buffer to preserve phrase start
                 const preRollLinear = new Float32Array(this.preRollSamples);
                 for (let i = 0; i < this.preRollSamples; i++) {
                     preRollLinear[i] = this.preRollBuffer[(this.preRollIndex + i) % this.preRollSamples];
@@ -112,74 +115,34 @@ class WakeWordDetector {
             this.utteranceChunks.push(new Float32Array(chunk));
             this.totalUtteranceSamples += chunk.length;
             const elapsedMs = (this.totalUtteranceSamples / this.sampleRate) * 1000;
-            // Track the 4 phonetic stages of "Hey / Hi" + "Tess" + "er" + "act"
-            // Stage 1: "Hey" / "Hi" (Voiced vowel: strong RMS, flexible ZCR < 0.28)
-            if (!this.phoneticStages[0] && elapsedMs < 550) {
-                if (rms > speechThreshold * 1.3 && zcr < 0.28) {
-                    this.phoneticStages[0] = true;
-                    this.stageTimings[0] = elapsedMs;
-                }
-            }
-            // Stage 2: "Tess" (/t/ transient + /s/ fricative: high ZCR > 0.26, highFreqRatio > 0.34)
-            if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 150 && elapsedMs < 950) {
-                if (zcr > 0.26 && highFreqRatio > 0.34) {
-                    this.phoneticStages[1] = true;
-                    this.stageTimings[1] = elapsedMs;
-                }
-            }
-            // Stage 3: "er" (Vocalic dip: moderate RMS, dip in ZCR)
-            if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 320 && elapsedMs < 1300) {
-                if (zcr < 0.30 && rms > speechThreshold * 0.9) {
-                    this.phoneticStages[2] = true;
-                    this.stageTimings[2] = elapsedMs;
-                }
-            }
-            // Stage 4: "act" (/k/ + /t/ release: high-frequency transient)
-            if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 480 && elapsedMs < 1700) {
-                if (zcr > 0.23 && highFreqRatio > 0.30) {
-                    this.phoneticStages[3] = true;
-                    this.stageTimings[3] = elapsedMs;
-                }
-            }
-            // Check for trailing pause or wake completion
+            // Check for trailing pause or phrase completion
             if (rms < speechThreshold) {
                 this.silenceFramesCount++;
             }
             else {
                 this.silenceFramesCount = Math.max(0, this.silenceFramesCount - 1);
             }
-            // Evaluate detection criteria: ALL 4 phonetic stages passed in sequential order
-            const isCandidateDuration = elapsedMs >= 450 && elapsedMs <= 2100;
-            const isSequential = this.stageTimings[0] <= this.stageTimings[1] &&
-                this.stageTimings[1] <= this.stageTimings[2] &&
-                this.stageTimings[2] <= this.stageTimings[3];
-            const allPhoneticsPassed = this.phoneticStages[0] &&
-                this.phoneticStages[1] &&
-                this.phoneticStages[2] &&
-                this.phoneticStages[3] &&
-                isSequential;
+            // Trigger candidate verification when phrase duration matches spoken wake word
+            // e.g. "Hey Tesseract" or "Tesseract" is 500ms - 2200ms
+            const isPhraseComplete = (elapsedMs >= 550 && this.silenceFramesCount >= 4) || elapsedMs >= 1500;
             const now = Date.now();
             const isDebounced = now - this.lastTriggerTime > this.debounceMs;
-            if (isDebounced && isCandidateDuration && allPhoneticsPassed) {
-                // Assemble audio buffer
+            if (isDebounced && isPhraseComplete && elapsedMs >= 450 && elapsedMs <= 2400) {
                 const fullAudio = this.flattenChunks();
-                const score = 0.94;
-                if (score >= this.threshold) {
-                    this.lastTriggerTime = now;
-                    console.log(`[Wake Word] Verified Wake Detected (Score: ${score.toFixed(2)}, Duration: ${Math.round(elapsedMs)}ms)`);
-                    if (this.onWakeCallback) {
-                        this.onWakeCallback({
-                            score,
-                            phrase: 'Hey Tesseract',
-                            wakeAudio: fullAudio,
-                        });
-                    }
-                    this.reset();
-                    return;
+                this.lastTriggerTime = now;
+                console.log(`[Wake Word] Speech candidate captured (Duration: ${Math.round(elapsedMs)}ms, Samples: ${fullAudio.length}), passing to ASR gate...`);
+                if (this.onWakeCallback) {
+                    this.onWakeCallback({
+                        score: 0.95,
+                        phrase: 'Hey Tesseract',
+                        wakeAudio: fullAudio,
+                    });
                 }
+                this.reset();
+                return;
             }
-            // Utterance timeout protection (exceeded 3.5 seconds)
-            if (elapsedMs > 3500 || (elapsedMs > 1200 && this.silenceFramesCount > 15)) {
+            // Utterance timeout protection
+            if (elapsedMs > 3200 || (elapsedMs > 1000 && this.silenceFramesCount > 16)) {
                 this.reset();
             }
         }

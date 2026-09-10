@@ -12,6 +12,7 @@ export interface WakeWordConfig {
     threshold?: number;
     debounceMs?: number;
     enabled?: boolean;
+    onWake?: (result: WakeDetectionResult) => void;
 }
 export declare class WakeWordDetector {
     private threshold;
