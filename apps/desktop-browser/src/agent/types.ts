@@ -83,6 +83,7 @@ export interface AgentDecision {
   tool?: string;
   arguments?: Record<string, any>;
   reason?: string;
+  thought?: string;
   confidence?: number;
   userPrompt?: string;
   isFinalStep?: boolean;

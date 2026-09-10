@@ -49,11 +49,22 @@ export interface RoutedCommand {
 export class CommandRouter {
   public static route(rawInput: string): RoutedCommand {
     const raw = rawInput || '';
-    const clean = raw
+    let clean = raw
       .toLowerCase()
-      .replace(/^(hey|hi|hello|ok|okay)?\s*tesseract[,.]?\s*/i, '')
+      .replace(/^(?:it\s+is\s+right|that\s+is\s+right|that\'?s\s+right|all\s+right|alright|right|ok|okay|yes|yeah|sure|yep|so|well)[,.]?\s*/i, '')
+      .replace(/^(?:hey|hi|hello|ok|okay)?\s*tesseract[,.]?\s*/i, '')
+      .replace(/^(?:can\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
+      .replace(/^(?:could\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
+      .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/i, '')
+      .replace(/^(?:please\s+)/i, '')
+      .replace(/\b(?:open|go\s+to|visit)\s+(?:your|the|my)\s+(youtube|instagram|google|gmail|amazon|twitter|x|reddit|netflix|spotify)\b/i, 'open $1')
+      .replace(/\b(?:pay|lay|pray)\s+((?:a\s+)?(?:random\s+)?(?:video|song|track|music|movie))\b/i, 'play $1')
       .replace(/[?.!,]/g, '')
       .trim();
+
+    if (/\b(?:youtube|spotify|music|video)\b/i.test(clean)) {
+      clean = clean.replace(/\bpay\b/i, 'play');
+    }
 
     // 1. FAST PATH CONTROLS (Deterministic <1ms, zero LLM)
     if (/^(go\s+)?back$/i.test(clean) || clean === 'previous page') {

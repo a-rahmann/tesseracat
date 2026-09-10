@@ -271,41 +271,57 @@ Output strictly valid JSON matching this schema:
 
     // Check for supported deterministic pipelined compound sequences FIRST
     // Pattern: "open youtube and search for <query>" or "open youtube and play <query>"
-    const ytCompound = cleanText.match(/^(?:open\s+youtube\s+(?:and|&)\s+(?:search(?:\s+for)?|find|play|listen\s+to)\s+(.+))$/i);
+    const ytCompound = cleanText.match(/^(?:open\s+youtube(?:\s+music)?\s+(?:and|&)\s+(search(?:\s+for)?|find|play|listen\s+to)\s+(.+))$/i);
     if (ytCompound) {
-      const query = ytCompound[1].trim();
+      const actionVerb = ytCompound[1].toLowerCase();
+      const query = ytCompound[2].trim();
+      const isPlay = actionVerb.includes('play') || actionVerb.includes('listen');
+      const isRandom = /^(?:a\s+)?(?:random\s+)?video$/i.test(query);
       const encodedQuery = encodeURIComponent(query);
-      const searchUrl = `https://www.youtube.com/results?search_query=${encodedQuery}`;
+      const targetUrl = isRandom ? 'https://www.youtube.com' : `https://www.youtube.com/results?search_query=${encodedQuery}`;
+
+      const goal = isRandom
+        ? 'Open YouTube and play a random video'
+        : isPlay
+          ? `Play "${query}" on YouTube`
+          : `Search YouTube for "${query}"`;
+
+      const spoken = isRandom
+        ? 'Opening YouTube and playing a video.'
+        : isPlay
+          ? `Playing ${query} on YouTube.`
+          : `Searching YouTube for ${query}.`;
+
       return {
         rawUserText: cleanText,
-        goal: `Search YouTube for "${query}"`,
+        goal,
         intentCategory: 'MEDIA_CONTROL',
-        entities: { platform: 'YouTube', query },
+        entities: { platform: 'YouTube', query: isRandom ? 'random video' : query },
         requiresBrowser: true,
         requiresPerception: true,
         isCompound: true,
         isFastPath: false,
-        suggestedTargetUrl: searchUrl,
+        suggestedTargetUrl: targetUrl,
         initialPlan: [
           {
             stepNumber: 1,
-            description: `Navigate to YouTube search for "${query}"`,
+            description: isRandom ? 'Navigate to YouTube' : `Navigate to YouTube for "${query}"`,
             toolName: 'browser.navigate',
-            parameters: { url: searchUrl },
-            expectedOutcome: 'YouTube search results loaded',
+            parameters: { url: targetUrl },
+            expectedOutcome: 'YouTube loaded',
             status: 'PENDING',
           },
           {
             stepNumber: 2,
-            description: `Verify and observe video results for "${query}"`,
-            toolName: 'browser.observe',
-            parameters: {},
-            expectedOutcome: 'Search results visible',
+            description: isPlay ? (isRandom ? 'Play a video from the feed' : `Play video result for "${query}"`) : `Verify video results for "${query}"`,
+            toolName: isPlay ? 'youtube.playResult' : 'browser.observe',
+            parameters: isPlay ? { index: 1 } : {},
+            expectedOutcome: isPlay ? 'Video playback started' : 'Search results visible',
             status: 'PENDING',
           },
         ],
-        subTasks: [`Navigate to YouTube search for ${query}`, 'Observe search results'],
-        spokenAcknowledgment: `Searching YouTube for ${query}.`,
+        subTasks: [isRandom ? 'Navigate to YouTube' : `Navigate to YouTube for ${query}`, isPlay ? 'Start video playback' : 'Observe search results'],
+        spokenAcknowledgment: spoken,
         confidence: 1.0,
         isCoherent: true,
       };
@@ -643,8 +659,8 @@ Output strictly valid JSON matching this schema:
       };
     }
 
-    // Video on YouTube: "play a video on youtube", "play video on youtube"
-    if (/^(?:play\s+(?:a\s+)?video\s+on\s+youtube|play\s+youtube\s+video)$/i.test(text)) {
+    // Video on YouTube: "play a video on youtube", "play video on youtube", "play a random video"
+    if (/^(?:play\s+(?:a\s+)?(?:random\s+)?video(?:\s+on\s+youtube)?|play\s+youtube\s+(?:random\s+)?video)$/i.test(text)) {
       const targetUrl = 'https://www.youtube.com';
       return {
         rawUserText: cleanText,
@@ -1004,15 +1020,25 @@ Output strictly valid JSON matching this schema:
   }
 
   private cleanWakeAndPreambles(text: string): string {
-    return text
+    let cleaned = text
+      .replace(/^(?:it\s+is\s+right|that\s+is\s+right|that\'?s\s+right|all\s+right|alright|right|ok|okay|yes|yeah|sure|yep|so|well)[,.]?\s*/i, '')
       .replace(/^(?:hey|hi|hello|ok|okay)?\s*tesseract[,.]?\s*/i, '')
-      .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/i, '')
       .replace(/^(?:can\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
       .replace(/^(?:could\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
+      .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/i, '')
       .replace(/^(?:please\s+)/i, '')
+      .replace(/\b(?:open|go\s+to|visit)\s+(?:your|the|my)\s+(youtube|instagram|google|gmail|amazon|twitter|x|reddit|netflix|spotify)\b/i, 'open $1')
+      .replace(/\b(?:pay|lay|pray)\s+((?:a\s+)?(?:random\s+)?(?:video|song|track|music|movie))\b/i, 'play $1')
       .replace(/['"]/g, '')
       .replace(/[?.!]+$/g, '')
       .trim();
+
+    // Contextual acoustic typo fix: "pay" -> "play" when used with media platforms
+    if (/\b(?:youtube|spotify|music|video)\b/i.test(cleaned)) {
+      cleaned = cleaned.replace(/\bpay\b/i, 'play');
+    }
+
+    return cleaned;
   }
 
   private fallbackCategory(text: string): IntentCategory {

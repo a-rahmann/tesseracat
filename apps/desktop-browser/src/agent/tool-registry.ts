@@ -78,6 +78,10 @@ export class ToolRegistry {
       read_pdf: 'document.read_pdf',
       extract_text: 'document.extract_text',
       compare: 'comparison.compare_products',
+      play_video: 'youtube.playResult',
+      play: 'youtube.playResult',
+      play_random: 'youtube.playRandom',
+      play_random_video: 'youtube.playRandom',
     };
 
     const mapped = aliasMap[lower];
@@ -473,9 +477,16 @@ export class ToolRegistry {
       parametersSchema: {
         type: 'object',
         properties: { index: { type: 'number' } },
-        required: ['index'],
       },
-      execute: async (args) => YouTubeAdapter.playResult(args.index),
+      execute: async (args) => YouTubeAdapter.playResult(args?.index || 1),
+    });
+
+    this.registerTool({
+      name: 'youtube.playRandom',
+      category: 'LOW_RISK_ACTION',
+      description: 'Play a random video from YouTube feed',
+      parametersSchema: { type: 'object', properties: {} },
+      execute: async () => YouTubeAdapter.playResult(Math.floor(Math.random() * 4) + 1),
     });
 
     this.registerTool({

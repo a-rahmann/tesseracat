@@ -668,6 +668,21 @@ Give a concise 2-sentence spoken response answering their question based on actu
         const automator = browser_automator_js_1.BrowserAutomator.getInstance();
         const media = media_controller_js_1.MediaController.getInstance();
         if (cmd.location === 'youtube' && cmd.query) {
+            const isRandom = /^(?:a\s+)?(?:random\s+)?video$/i.test(cmd.query);
+            if (isRandom) {
+                this.updateState({ status: 'executing', currentAction: 'Opening YouTube and playing a video...', progress: 0.4 });
+                await automator.navigate('https://www.youtube.com');
+                const played = await youtube_js_1.YouTubeAdapter.playResult(Math.floor(Math.random() * 3) + 1);
+                if (played) {
+                    this.updateState({ status: 'success', currentAction: 'Playing video', progress: 1.0 });
+                    await this.speak('Playing a video on YouTube.');
+                }
+                else {
+                    this.updateState({ status: 'error', currentAction: 'Could not start video playback', progress: 1.0 });
+                    await this.speak('Opened YouTube, but could not start playback.');
+                }
+                return;
+            }
             this.updateState({ status: 'executing', currentAction: `Searching YouTube for "${cmd.query}"...`, progress: 0.4 });
             const res = await youtube_js_1.YouTubeAdapter.searchAndPlay(cmd.query, cmd.index || 1);
             if (res.success) {
