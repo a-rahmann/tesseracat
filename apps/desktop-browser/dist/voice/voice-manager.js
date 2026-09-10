@@ -272,46 +272,8 @@ class VoiceManager {
                 break;
         }
     }
-    async handleWakeDetected(result) {
-        console.log(`[VoiceManager] Acoustic wake candidate received (${result.phrase}), validating with ASR gate...`);
-        // Dual-gate ASR verification on wakeAudio: verify the user ACTUALLY said "Hey Tesseract"
-        if (result.wakeAudio && result.wakeAudio.length >= 3200) {
-            try {
-                const text = await whisper_js_1.WhisperBridge.transcribe(result.wakeAudio);
-                const clean = (text || '').toLowerCase().trim();
-                console.log(`[VoiceManager] Wake verification transcription: "${clean}"`);
-                // Check if transcription matches wake phrase variants
-                const isWakeMatch = /\b(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert|passeract|cassette|tessa|desire)\b/i.test(clean);
-                if (!isWakeMatch) {
-                    console.log(`[VoiceManager] Wake candidate rejected by ASR gate ("${clean}" != wake word). Preventing phantom wake.`);
-                    this.wakeDetector.reset();
-                    return;
-                }
-                // Single-shot command detection: e.g. "Hey Tesseract, open youtube and play a video"
-                const singleShotRemainder = clean.replace(/^(?:hey|hi|ok|okay)?\s*(?:tesseract|tesser|teseract|tessera|tesla|desert|passeract|cassette|tessa|desire)[,.]?\s*/i, '').trim();
-                if (singleShotRemainder.length >= 3) {
-                    console.log(`[VoiceManager] Single-shot wake + command detected: "${singleShotRemainder}". Executing immediately.`);
-                    this.transitionTo('EXECUTING', { detail: singleShotRemainder });
-                    for (const listener of this.transcriptionListeners) {
-                        try {
-                            listener(singleShotRemainder);
-                        }
-                        catch { }
-                    }
-                    for (const listener of this.commandListeners) {
-                        try {
-                            listener(singleShotRemainder);
-                        }
-                        catch { }
-                    }
-                    return;
-                }
-            }
-            catch (err) {
-                console.warn('[VoiceManager] Wake ASR verification error:', err);
-            }
-        }
-        console.log(`[VoiceManager] Verified Wake Confirmed! Listening for user command...`);
+    handleWakeDetected(result) {
+        console.log(`[VoiceManager] Acoustic wake confirmed (${result.phrase})! Listening for user command...`);
         // Prepare command recording buffer seeded with recent pre-roll audio so command onset is preserved
         this.commandAudioChunks = [...this.preRollChunks];
         this.totalCommandSamples = this.preRollSamples;

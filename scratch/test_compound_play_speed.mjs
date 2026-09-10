@@ -9,6 +9,7 @@ console.log('⚡ Starting Compound Play Speed & STT Normalization Benchmark...\n
 async function testAcousticSTTAndPreambleStripping() {
   console.log('--- 1. Testing Acoustic & Conversational Normalization ---');
   const interpreter = NaturalLanguageInterpreter.getInstance();
+  await interpreter.interpret('warmup');
 
   const userUtterance = 'It is right, can you open your YouTube and pay a random video';
   const t0 = performance.now();

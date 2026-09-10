@@ -142,23 +142,64 @@ export class WakeWordDetector {
 
       const elapsedMs = (this.totalUtteranceSamples / this.sampleRate) * 1000;
 
-      // Check for trailing pause or phrase completion
+      // Track the 4 phonetic stages of "Hey" + "Tess" + "er" + "act"
+      // Stage 0: Voiced vowel onset "Hey" / "Hi" (voiced energy, low ZCR < 0.26)
+      if (!this.phoneticStages[0] && elapsedMs < 650) {
+        if (rms >= speechThreshold * 1.05 && zcr < 0.26) {
+          this.phoneticStages[0] = true;
+          this.stageTimings[0] = elapsedMs;
+        }
+      }
+
+      // Stage 1: "Tess" (/t/ onset + /s/ fricative: elevated ZCR or high frequency energy)
+      if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 100 && elapsedMs < 1150) {
+        if (zcr > 0.20 || highFreqRatio > 0.22) {
+          this.phoneticStages[1] = true;
+          this.stageTimings[1] = elapsedMs;
+        }
+      }
+
+      // Stage 2: "er" (Vocalic dip: lower ZCR < 0.28, voiced energy)
+      if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 220 && elapsedMs < 1450) {
+        if (zcr < 0.28 && rms >= speechThreshold * 0.75) {
+          this.phoneticStages[2] = true;
+          this.stageTimings[2] = elapsedMs;
+        }
+      }
+
+      // Stage 3: "act" (/k/ + /t/ plosive release: transient burst)
+      if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 350 && elapsedMs < 1950) {
+        if (highFreqRatio > 0.18 || zcr > 0.18) {
+          this.phoneticStages[3] = true;
+          this.stageTimings[3] = elapsedMs;
+        }
+      }
+
+      // Check for trailing pause
       if (rms < speechThreshold) {
         this.silenceFramesCount++;
       } else {
         this.silenceFramesCount = Math.max(0, this.silenceFramesCount - 1);
       }
 
-      // Trigger candidate verification when phrase duration matches spoken wake word
-      // e.g. "Hey Tesseract" or "Tesseract" is 500ms - 2200ms
-      const isPhraseComplete = (elapsedMs >= 550 && this.silenceFramesCount >= 4) || elapsedMs >= 1500;
+      const isCandidateDuration = elapsedMs >= 550 && elapsedMs <= 2200;
+      const isSequential = this.stageTimings[0] <= this.stageTimings[1] &&
+                           this.stageTimings[1] <= this.stageTimings[2] &&
+                           this.stageTimings[2] <= this.stageTimings[3];
+      const allPhoneticsPassed = this.phoneticStages[0] &&
+                                 this.phoneticStages[1] &&
+                                 this.phoneticStages[2] &&
+                                 this.phoneticStages[3] &&
+                                 isSequential;
+
       const now = Date.now();
       const isDebounced = now - this.lastTriggerTime > this.debounceMs;
+      const hasTrailingPause = this.silenceFramesCount >= 3 || elapsedMs >= 1500;
 
-      if (isDebounced && isPhraseComplete && elapsedMs >= 450 && elapsedMs <= 2400) {
+      if (isDebounced && isCandidateDuration && allPhoneticsPassed && hasTrailingPause) {
         const fullAudio = this.flattenChunks();
         this.lastTriggerTime = now;
-        console.log(`[Wake Word] Speech candidate captured (Duration: ${Math.round(elapsedMs)}ms, Samples: ${fullAudio.length}), passing to ASR gate...`);
+        console.log(`[Wake Word] Verified Acoustic Wake Detected: "Hey Tesseract" (Duration: ${Math.round(elapsedMs)}ms)`);
 
         if (this.onWakeCallback) {
           this.onWakeCallback({

@@ -119,11 +119,8 @@ async function transcribeAudioBuffer(audioFloat32) {
     const t0 = Date.now();
     const transcriberOptions = {
         return_timestamps: false,
+        chunk_length_s: Math.min(30, Math.max(5, Math.ceil(activeAudio.length / 16000) + 1)),
     };
-    if (activeAudio.length > 20 * 16000) {
-        transcriberOptions.chunk_length_s = 30;
-        transcriberOptions.stride_length_s = 5;
-    }
     const output = await transcriber(activeAudio, transcriberOptions);
     const elapsedMs = Date.now() - t0;
     console.log(`[Whisper] Inference finished in ${elapsedMs}ms. Raw output:`, output);

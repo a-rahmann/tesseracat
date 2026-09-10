@@ -125,12 +125,8 @@ export async function transcribeAudioBuffer(audioFloat32: Float32Array): Promise
 
   const transcriberOptions: any = {
     return_timestamps: false,
+    chunk_length_s: Math.min(30, Math.max(5, Math.ceil(activeAudio.length / 16000) + 1)),
   };
-
-  if (activeAudio.length > 20 * 16000) {
-    transcriberOptions.chunk_length_s = 30;
-    transcriberOptions.stride_length_s = 5;
-  }
 
   const output = await transcriber(activeAudio, transcriberOptions);
 

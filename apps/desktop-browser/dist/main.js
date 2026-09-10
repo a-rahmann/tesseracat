@@ -403,6 +403,8 @@ electron_1.ipcMain.handle('whisper:transcribe', async (_event, audioPayload) => 
         if (!float32 || float32.length === 0) {
             return { success: false, error: 'Empty audio buffer' };
         }
+        // Yield control so any pending UI rendering and IPC events dispatch immediately
+        await new Promise(resolve => setImmediate(resolve));
         const text = await (0, whisper_js_1.transcribeAudioBuffer)(float32);
         console.log(`[Whisper IPC] Returning text: "${text}"`);
         return { success: true, text };
