@@ -124,7 +124,7 @@ export class OllamaGemmaModel implements AgentModel {
       payload.format = options.format || options.jsonSchema;
     }
 
-    const timeoutMs = options.timeoutMs ?? 120000; // 120s default for CPU inference
+    const timeoutMs = options.timeoutMs ?? 7000; // 7s default so local Ollama never hangs the user interface
     const controller = new AbortController();
     let isTimedOut = false;
     const timeout = setTimeout(() => {

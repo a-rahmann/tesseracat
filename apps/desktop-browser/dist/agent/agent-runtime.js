@@ -463,8 +463,10 @@ class AgentRuntime {
             this.voiceManager.resetToWakeListening();
             return;
         }
-        // 6. Video Understanding ("What is this video about?")
-        if ((interpreted.intentCategory === 'RESEARCH' || interpreted.intentCategory === 'MEDIA_CONTROL') && (cleanLower.includes('video') || cleanLower.includes('captions'))) {
+        // 6. Video Understanding ("What is this video about?", "Summarize this video")
+        const isVideoQuestion = /^(?:what\s+(?:is|was)|summarize|explain|tell\s+me\s+about|what\s+does|transcribe)\b/i.test(cleanLower) ||
+            cleanLower.includes('about this video') || cleanLower.includes('captions');
+        if (interpreted.intentCategory === 'RESEARCH' && isVideoQuestion) {
             this.updateState({ status: 'thinking', currentAction: 'Analyzing video content...' });
             const videoData = await youtube_js_1.YouTubeAdapter.getCurrentVideo();
             if (videoData.title) {
