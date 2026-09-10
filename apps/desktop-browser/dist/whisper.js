@@ -120,6 +120,7 @@ async function transcribeAudioBuffer(audioFloat32) {
     const transcriberOptions = {
         return_timestamps: false,
         chunk_length_s: Math.min(30, Math.max(5, Math.ceil(activeAudio.length / 16000) + 1)),
+        prompt: 'Hey Tesseract, open YouTube and play a video. Search Google, pause video, browse web.',
     };
     const output = await transcriber(activeAudio, transcriberOptions);
     const elapsedMs = Date.now() - t0;
@@ -130,13 +131,13 @@ async function transcribeAudioBuffer(audioFloat32) {
         console.log(`[Whisper] Discarded punctuation hallucination: "${rawText}"`);
         return '';
     }
-    // Filter out sound effect / background noise tokens (e.g. "[Music]", "(Applause)", "*cough*")
+    // Filter out sound effect / background noise tokens (e.g. "[Music]", "(Applause)", "*cough*", "(bell dings)")
     if (/^(\[|\(|\*)[a-zA-Z\s_-]+(\]|\)|\*)$/i.test(rawText)) {
         console.log(`[Whisper] Ignored non-speech sound token: "${rawText}"`);
         return '';
     }
-    // Strip embedded sound tokens (e.g. "[Music] Hey Tesseract")
-    rawText = rawText.replace(/\[[a-zA-Z\s_-]+\]/gi, '').replace(/\([a-zA-Z\s_-]+\)/gi, '').trim();
+    // Strip embedded sound tokens (e.g. "[Music] Hey Tesseract", "(bell dings)")
+    rawText = rawText.replace(/\[[^\]]+\]/g, '').replace(/\([^)]+\)/g, '').replace(/\*[^*]+\*/g, '').trim();
     console.log(`[Whisper] Final extracted text: "${rawText}"`);
     return rawText;
 }

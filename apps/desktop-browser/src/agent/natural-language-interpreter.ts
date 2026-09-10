@@ -191,7 +191,7 @@ Output strictly valid JSON matching this schema:
       const decision = await this.model.structuredOutput<any>(
         prompt,
         'AgentGoal JSON Schema',
-        { temperature: 0.1, maxTokens: 280 }
+        { temperature: 0.1, maxTokens: 280, timeoutMs: 5000 }
       );
 
       const isCoherent = decision.isCoherent !== false && (decision.confidence ?? 0.85) >= 0.6;
@@ -1022,6 +1022,44 @@ Output strictly valid JSON matching this schema:
       };
     }
 
+    // 4. Media & YouTube Playback (e.g. "open youtube and play a random video", "play video on youtube")
+    if (lower.includes('youtube') || lower.includes('video') || lower.includes('song') || lower.includes('music') || lower.includes('play')) {
+      const isRandom = /random/i.test(lower) || !lower.includes('for');
+      const targetUrl = 'https://www.youtube.com';
+      return {
+        rawUserText: rawText,
+        goal: isRandom ? 'Open YouTube and play a video' : 'Play video on YouTube',
+        intentCategory: 'MEDIA_CONTROL',
+        entities: { platform: 'YouTube', query: isRandom ? 'random video' : 'popular' },
+        requiresBrowser: true,
+        requiresPerception: true,
+        isCompound: true,
+        suggestedTargetUrl: targetUrl,
+        initialPlan: [
+          {
+            stepNumber: 1,
+            description: 'Navigate to YouTube',
+            toolName: 'browser.navigate',
+            parameters: { url: targetUrl },
+            expectedOutcome: 'YouTube loaded',
+            status: 'PENDING',
+          },
+          {
+            stepNumber: 2,
+            description: 'Play video from YouTube feed',
+            toolName: 'youtube.playResult',
+            parameters: { index: 1 },
+            expectedOutcome: 'Video playback started',
+            status: 'PENDING',
+          },
+        ],
+        subTasks: ['Navigate to YouTube', 'Play video from feed'],
+        spokenAcknowledgment: 'Opening YouTube and playing a video.',
+        confidence: 0.95,
+        isCoherent: true,
+      };
+    }
+
     // Coherence Gate: Validate utterance before allowing fallback general automation
     const hasActionableVerb = /\b(?:open|go|visit|navigate|search|find|lookup|check|read|see|click|press|type|enter|scroll|play|pause|stop|close|compare|buy|order|download|summarize|explain|tell|show|what|who|where|how|why|when)\b/i.test(lower);
     const isDanglingConjunction = /^(?:and|but|or|so|yet)\s+(?:you\s+)?/i.test(lower);
@@ -1088,23 +1126,32 @@ Output strictly valid JSON matching this schema:
 
   private cleanWakeAndPreambles(text: string): string {
     let cleaned = text
-      .replace(/^(?:it\s+is\s+right|that\s+is\s+right|that\'?s\s+right|all\s+right|alright|right|ok|okay|yes|yeah|sure|yep|so|well)[,.]?\s*/i, '')
-      .replace(/^(?:hey|hi|hello|ok|okay)?\s*tesseract[,.]?\s*/i, '')
-      .replace(/^(?:can\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
-      .replace(/^(?:could\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
-      .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/i, '')
-      .replace(/^(?:please\s+)/i, '')
-      .replace(/\b(?:open|go\s+to|visit)\s+(?:your|the|my)\s+(youtube|instagram|google|gmail|amazon|twitter|x|reddit|netflix|spotify)\b/i, 'open $1')
-      .replace(/\b(?:pay|lay|pray|plea)\s+((?:a\s+)?(?:random\s+|specific\s+)?(?:video|vide|song|track|music|movie))\b/i, 'play $1')
-      .replace(/\bvide\b/i, 'video')
-      .replace(/\b(?:from|in|at)\s+youtube\b/i, 'on youtube')
+      // 1. Strip Whisper wake phrase mishearings & preamble hallucinations
+      .replace(/^(?:hey[,.]?\s+)?(?:this\s+is\s+(?:ragh|ralph|rock|tess|rough|rat|tesseract)|hey\s+this\s+is)[,.]?\s*/gi, '')
+      .replace(/^(?:it\s+is\s+right|that\s+is\s+right|that\'?s\s+right|all\s+right|alright|right|ok|okay|yes|yeah|sure|yep|so|well)[,.]?\s*/gi, '')
+      .replace(/^(?:hey|hi|hello|ok|okay)?\s*(?:tesseract|teseract|deseract|desert\s*act|tesserac)[,.]?\s*/gi, '')
+      .replace(/^(?:can\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/gi, '')
+      .replace(/^(?:could\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/gi, '')
+      .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/gi, '')
+      .replace(/^(?:please\s+)/gi, '')
+      // 2. Strip polite conversational closings
+      .replace(/[,.]?\s*(?:thank\s+you|thanks|please|thank\s+u)[.!?\s]*$/gi, '')
+      // 3. Platform & noun normalization
+      .replace(/\bjune\s*clear(?:\s*box)?\b/gi, 'youtube')
+      .replace(/\b(?:open|go\s+to|visit)\s+(?:your|the|my)\s+(youtube|instagram|google|gmail|amazon|twitter|x|reddit|netflix|spotify)\b/gi, 'open $1')
+      .replace(/\b(?:your|the|my)\s+youtube\b/gi, 'youtube')
+      // 4. Acoustic verb substitutions for "play" (Whisper often transcribes "play" as "be", "pay", "lay", "pray")
+      .replace(/\b(?:be|pay|lay|pray|plea|plaid|played)\s+((?:a\s+)?(?:random\s+|specific\s+)?(?:video|vide|song|track|music|movie))\b/gi, 'play $1')
+      .replace(/\b(?:can\s+you\s+)?(?:be|pay|lay)\s+a\s+(?:random\s+|specific\s+)?video\b/gi, 'play a random video')
+      .replace(/\bvide\b/gi, 'video')
+      .replace(/\b(?:from|in|at)\s+youtube\b/gi, 'on youtube')
       .replace(/['"]/g, '')
       .replace(/[?.!]+$/g, '')
       .trim();
 
-    // Contextual acoustic typo fix: "pay" -> "play" when used with media platforms
+    // Contextual acoustic typo fix: "pay" / "be" -> "play" when used with media platforms
     if (/\b(?:youtube|spotify|music|video)\b/i.test(cleaned)) {
-      cleaned = cleaned.replace(/\bpay\b/i, 'play');
+      cleaned = cleaned.replace(/\b(?:pay|be|lay)\b/gi, 'play');
     }
 
     return cleaned;

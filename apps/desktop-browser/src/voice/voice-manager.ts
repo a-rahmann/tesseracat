@@ -337,9 +337,9 @@ export class VoiceManager {
   private handleWakeDetected(result: WakeDetectionResult): void {
     console.log(`[VoiceManager] Acoustic wake confirmed (${result.phrase})! Listening for user command...`);
 
-    // Prepare command recording buffer seeded with recent pre-roll audio so command onset is preserved
-    this.commandAudioChunks = [...this.preRollChunks];
-    this.totalCommandSamples = this.preRollSamples;
+    // Start command recording buffer cleanly without wake phrase residue
+    this.commandAudioChunks = [];
+    this.totalCommandSamples = 0;
     this.preRollChunks = [];
     this.preRollSamples = 0;
     this.hasDetectedUserSpeech = false;
