@@ -21,27 +21,34 @@ async function testWakeWordSensitivityAndWhisperGate() {
   });
   detector.setEnabled(true);
 
-  // Simulate 1.2s of human speech saying "Hey Tesseract" at normal volume (RMS ~0.015)
-  // 16kHz audio: 19,200 samples
-  const normalSpeechSamples = 19200;
+  // Simulate 1.2s of human speech saying "Hey Tesseract" with natural phonetic cadence
+  const totalSamples = 16000 * 1.3; // 1.3s
   const chunkLength = 512;
   
-  for (let i = 0; i < normalSpeechSamples; i += chunkLength) {
+  for (let i = 0; i < totalSamples; i += chunkLength) {
     const chunk = new Float32Array(chunkLength);
-    // Moderate conversational speech sinusoid + harmonics (f = 220Hz fundamental)
-    const tStart = i / 16000;
+    const ms = (i / 16000) * 1000;
+    
     for (let j = 0; j < chunkLength; j++) {
-      const t = tStart + j / 16000;
-      chunk[j] = (0.018 * Math.sin(2 * Math.PI * 220 * t) + 0.008 * Math.sin(2 * Math.PI * 440 * t));
+      const t = (i + j) / 16000;
+      if (ms < 300) {
+        // "Hey" (voiced vowel: low ZCR, 220Hz + 440Hz)
+        chunk[j] = 0.022 * Math.sin(2 * Math.PI * 220 * t) + 0.010 * Math.sin(2 * Math.PI * 440 * t);
+      } else if (ms < 650) {
+        // "Tess" (high-frequency fricative: high ZCR noise)
+        chunk[j] = (Math.random() - 0.5) * 0.035;
+      } else if (ms < 900) {
+        // "er" (voiced liquid: 200Hz)
+        chunk[j] = 0.018 * Math.sin(2 * Math.PI * 200 * t);
+      } else if (ms < 1150) {
+        // "act" (transient burst)
+        chunk[j] = (Math.random() - 0.5) * 0.028 + 0.012 * Math.sin(2 * Math.PI * 300 * t);
+      } else {
+        // Trailing silence
+        chunk[j] = (Math.random() - 0.5) * 0.001;
+      }
     }
     detector.processChunk(chunk);
-  }
-
-  // Followed by 250ms of trailing pause (silence frames)
-  for (let i = 0; i < 4000; i += chunkLength) {
-    const silentChunk = new Float32Array(chunkLength);
-    for (let j = 0; j < chunkLength; j++) silentChunk[j] = 0.001 * (Math.random() - 0.5);
-    detector.processChunk(silentChunk);
   }
 
   assert(wakeTriggered, 'WakeWordDetector should trigger at normal conversational speaking volume (RMS ~0.018)');
