@@ -7,6 +7,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Planner = void 0;
 const ollama_gemma_js_1 = require("../ai/ollama-gemma.js");
+const learned_rules_store_js_1 = require("../memory/learned-rules-store.js");
 class Planner {
     static instance = null;
     model;
@@ -48,6 +49,7 @@ class Planner {
         const subtaskContext = goal.subTasks && goal.subTasks.length > 0
             ? `Goal Subtasks Identified by NLU:\n${goal.subTasks.map((st, i) => `${i + 1}. ${st}`).join('\n')}`
             : '';
+        const learnedRules = learned_rules_store_js_1.LearnedRulesStore.getInstance().formatRulesPrompt(context.currentUrl, goal.goal);
         const prompt = `You are Tesseract's Autonomous Browser Mission Planner.
 Break down the user's objective into 2 to 6 concrete, sequential browser steps.
 
@@ -57,6 +59,7 @@ Entities: ${JSON.stringify(goal.entities)}
 Current Browser URL: "${context.currentUrl}"
 Current Page Title: "${context.pageTitle}"
 ${subtaskContext}
+${learnedRules}
 
 Available Tools:
 ${context.availableTools.join(', ')}
@@ -67,6 +70,7 @@ Guidelines:
 3. For multi-site comparison, plan to search site A, collect data, search site B, collect data, and synthesize.
 4. Prefer high-level semantic tools (e.g. "instagram.getMessages", "youtube.search") when targeting supported platforms.
 5. Keep steps granular and verifiable.
+6. Adhere to any Learned User Rules and Past Self-Corrections listed above!
 
 Output strictly valid JSON matching this schema:
 [
@@ -118,6 +122,7 @@ Output strictly valid JSON matching this schema:
      * Generates a revised plan when an action fails or the DOM changes unexpectedly.
      */
     async replan(goal, failedStep, failureReason, context) {
+        const learnedRules = learned_rules_store_js_1.LearnedRulesStore.getInstance().formatRulesPrompt(context.currentUrl, failureReason);
         const prompt = `A step in our autonomous browser plan failed. Generate 1 to 3 alternative recovery steps to accomplish the goal.
 
 Overall Goal: "${goal}"
@@ -126,6 +131,7 @@ Failure Reason: "${failureReason}"
 Active URL: "${context.currentUrl}"
 Active Page Elements Summary:
 ${context.compactSnapshot || 'None'}
+${learnedRules}
 
 Available Tools:
 ${context.availableTools.join(', ')}

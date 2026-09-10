@@ -57,19 +57,22 @@ export class TaskCheckpointManager {
 
   public saveCheckpoint(cp: Partial<TaskCheckpoint> & { taskId: string; goal: string }): void {
     const taskId = cp.taskId || `cp_${Date.now()}`;
-    const goal = cp.goal || 'Autonomous Mission';
-    const norm: TaskCheckpoint = {
+    const goal = cp.goal || (cp as any).task || 'Autonomous Mission';
+    const completedSteps = cp.completedSteps || (cp as any).completedActions || [];
+    const norm: any = {
       taskId,
       goal,
-      currentStepIndex: cp.currentStepIndex || 0,
-      completedSteps: cp.completedSteps || [],
+      task: goal,
+      currentStepIndex: cp.currentStepIndex || (cp as any).stepIndex || 0,
+      completedSteps,
+      completedActions: completedSteps,
       remainingSteps: cp.remainingSteps || [],
       currentUrl: cp.currentUrl || '',
       activeTabId: cp.activeTabId,
       openTabIds: cp.openTabIds || [],
       pageStateHash: cp.pageStateHash || '',
       pendingHumanAction: cp.pendingHumanAction,
-      contextData: cp.contextData || {},
+      contextData: cp.contextData || (cp as any).state || {},
       timestamp: cp.timestamp || Date.now(),
     };
     this.checkpoints.set(taskId, norm);

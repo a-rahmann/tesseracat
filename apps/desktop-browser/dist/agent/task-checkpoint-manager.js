@@ -57,19 +57,22 @@ class TaskCheckpointManager {
     }
     saveCheckpoint(cp) {
         const taskId = cp.taskId || `cp_${Date.now()}`;
-        const goal = cp.goal || 'Autonomous Mission';
+        const goal = cp.goal || cp.task || 'Autonomous Mission';
+        const completedSteps = cp.completedSteps || cp.completedActions || [];
         const norm = {
             taskId,
             goal,
-            currentStepIndex: cp.currentStepIndex || 0,
-            completedSteps: cp.completedSteps || [],
+            task: goal,
+            currentStepIndex: cp.currentStepIndex || cp.stepIndex || 0,
+            completedSteps,
+            completedActions: completedSteps,
             remainingSteps: cp.remainingSteps || [],
             currentUrl: cp.currentUrl || '',
             activeTabId: cp.activeTabId,
             openTabIds: cp.openTabIds || [],
             pageStateHash: cp.pageStateHash || '',
             pendingHumanAction: cp.pendingHumanAction,
-            contextData: cp.contextData || {},
+            contextData: cp.contextData || cp.state || {},
             timestamp: cp.timestamp || Date.now(),
         };
         this.checkpoints.set(taskId, norm);

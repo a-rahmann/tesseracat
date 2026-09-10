@@ -8,6 +8,8 @@ import { AgentGoal, IntentCategory } from './types.js';
 import { AgentModel } from '../ai/model.js';
 import { OllamaGemmaModel } from '../ai/ollama-gemma.js';
 import { ConversationManager } from '../memory/conversation-manager.js';
+import { ContextManager } from '../memory/context-manager.js';
+import { LearnedRulesStore } from '../memory/learned-rules-store.js';
 import { BrowserStateStore } from '../memory/browser-state-store.js';
 
 export class NaturalLanguageInterpreter {
@@ -58,12 +60,54 @@ export class NaturalLanguageInterpreter {
 
     const browserStore = BrowserStateStore.getInstance();
     const activeTab = browserStore.getActiveTab();
-    const activeUrl = currentUrl || activeTab?.url || 'about:blank';
-    const activeTitle = currentTitle || activeTab?.title || '';
+    const rawUrl = typeof currentUrl === 'string' ? currentUrl : (currentUrl as any)?.currentUrl || (currentUrl as any)?.url;
+    const rawTitle = typeof currentTitle === 'string' ? currentTitle : (currentUrl as any)?.currentTitle || (currentUrl as any)?.title;
+    const activeUrl = typeof rawUrl === 'string' ? rawUrl : activeTab?.url || 'about:blank';
+    const activeTitle = typeof rawTitle === 'string' ? rawTitle : activeTab?.title || '';
+
+    // 0a. User Correction & Teaching Loop:
+    // "No, you should click X instead", "That was wrong, next time...", "Remember to..."
+    const correctionMatch = stripped.match(/^(?:no[,.]?\s+(?:that(?:'s|\s+is|\s+was)?\s+wrong[,.]?\s*)?|that(?:'s|\s+is|\s+was)\s+wrong[,.]?\s*|you\s+(?:made\s+a\s+mistake|did\s+it\s+wrong)[,.]?\s*|don'?t\s+do\s+that[,.]?\s*|next\s+time\s+|remember\s+to\s+)(.+)$/i);
+    if (correctionMatch) {
+      const correctionText = correctionMatch[1].trim();
+      const domain = activeUrl && !activeUrl.startsWith('about:') ? new URL(activeUrl).hostname.replace(/^www\./, '') : undefined;
+      const lastGoal = ContextManager.getInstance().getLastChainStep()?.goal || 'previous task';
+
+      const rule = LearnedRulesStore.getInstance().recordUserCorrection({
+        domain,
+        pattern: stripped,
+        mistake: `User corrected behavior after: "${lastGoal}"`,
+        correction: correctionText,
+      });
+
+      console.log(`[NaturalLanguageInterpreter] User correction recorded into LearnedRulesStore: "${rule.correction}"`);
+
+      // Immediately translate the correction into a direct action or fast-path
+      const correctedStripped = this.cleanWakeAndPreambles(correctionText.replace(/^(?:you\s+should\s+|please\s+|just\s+)/i, ''));
+      const directCorrected = this.detectFastPathIntent(correctedStripped, activeUrl);
+      if (directCorrected) {
+        directCorrected.spokenAcknowledgment = `Understood. I learned that for next time, and applying your correction now.`;
+        return directCorrected;
+      }
+
+      return {
+        rawUserText: rawText,
+        goal: `Apply correction: ${correctionText}`,
+        intentCategory: 'GENERAL_AUTOMATION',
+        entities: { correction: correctionText, domain },
+        requiresBrowser: true,
+        requiresPerception: true,
+        isCompound: false,
+        spokenAcknowledgment: `Understood, I've learned that. Applying your correction now.`,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
 
     // Fast-path intent detection for sub-millisecond execution (<1ms)
-    const fastPathGoal = this.detectFastPathIntent(stripped, activeUrl);
+    let fastPathGoal = this.detectFastPathIntent(stripped, activeUrl);
     if (fastPathGoal) {
+      fastPathGoal = ContextManager.getInstance().optimizeAndPrune(fastPathGoal, activeUrl);
       console.log(`[NaturalLanguageInterpreter] Fast path triggered: action=${fastPathGoal.fastPathAction || 'plan'}, isCompound=${fastPathGoal.isCompound}, goal="${fastPathGoal.goal}"`);
       return fastPathGoal;
     }
@@ -94,6 +138,9 @@ export class NaturalLanguageInterpreter {
       };
     }
 
+    const domain = activeUrl && !activeUrl.startsWith('about:') ? new URL(activeUrl).hostname.replace(/^www\./, '') : undefined;
+    const learnedRulesPrompt = LearnedRulesStore.getInstance().formatRulesPrompt(domain, stripped);
+
     // Single-Pass Prompt: Extract intent, entities, suggested URL, AND initial plan steps in ONE LLM round-trip
     const prompt = `You are Tesseract's Natural Language Understanding Engine.
 Analyze the user command and extract their true intent, goals, entities, and execution needs.
@@ -104,6 +151,7 @@ Active Browser URL: "${activeUrl}"
 Active Page Title: "${activeTitle}"
 Recent Conversation:
 ${recentContext || 'None'}
+${learnedRulesPrompt}
 
 Rules:
 1. NEVER truncate or drop compound instructions. For example, in "open Instagram and check whether Rahul messaged me", the goal is to check messages from Rahul on Instagram, NOT just opening Instagram.
@@ -191,10 +239,35 @@ Output strictly valid JSON matching this schema:
     const text = cleanText.toLowerCase().trim();
     if (!text) return null;
 
+    // 0. CHECK PERSISTENT LEARNED RULES (User Corrections & Self-Healing Workarounds)
+    const domain = activeUrl && !activeUrl.startsWith('about:') ? new URL(activeUrl).hostname.replace(/^www\./, '') : undefined;
+    const applicableRules = LearnedRulesStore.getInstance().getApplicableRules(domain, text);
+    if (applicableRules.length > 0 && applicableRules[0].replacementAction) {
+      const rep = applicableRules[0].replacementAction;
+      console.log(`[NaturalLanguageInterpreter] Applying learned rule: "${applicableRules[0].correction}"`);
+      return {
+        rawUserText: cleanText,
+        goal: applicableRules[0].correction,
+        intentCategory: 'GENERAL_AUTOMATION',
+        fastPathAction: rep.action,
+        entities: rep.parameters || {},
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        spokenAcknowledgment: `Applying learned rule: ${applicableRules[0].correction}`,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
     // 1. COMPOUND SAFETY GUARD:
-    // Any utterance with compound connectives MUST NOT take single-step micro action branches,
+    // Any utterance with compound connectives linking actionable clauses MUST NOT take single-step micro action branches,
     // UNLESS it matches an explicitly supported pipelined sequence.
-    const hasCompoundConnective = /\b(?:and|then|after|while|when|check|verify|if|whether|see\s+if|find\s+out|lookup|tell\s+me)\b/i.test(text);
+    // Invariant: Single-step titles containing the word "and" (e.g. "Kon and Grey", "Guns and Roses", "Tom and Jerry")
+    // are NOT compound commands.
+    const hasCompoundConnective = /\b(?:then|after|while|when|verify|whether|see\s+if|find\s+out|tell\s+me)\b/i.test(text) ||
+                                  /\b(?:and|then)\s+(?:also\s+)?(?:check|verify|see\s+if|tell\s+me|find\s+out|lookup|open|navigate|go\s+to|visit|click|type|search|play|read|summarize)\b/i.test(text);
 
     // Check for supported deterministic pipelined compound sequences FIRST
     // Pattern: "open youtube and search for <query>" or "open youtube and play <query>"
@@ -424,6 +497,42 @@ Output strictly valid JSON matching this schema:
       };
     }
 
+    // Media Controls: Pause (<1ms)
+    if (/^(?:pause(?:\s+(?:the\s+)?(?:video|playback|song|music|audio))?|freeze|hold)$/i.test(text)) {
+      return {
+        rawUserText: cleanText,
+        goal: 'Pause media playback',
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'PAUSE',
+        entities: { action: 'pause' },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        spokenAcknowledgment: 'Paused.',
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // Media Controls: Resume / Play (<1ms)
+    if (/^(?:resume(?:\s+(?:the\s+)?(?:video|playback|song|music|audio))?|unpause|continue\s+playing)$/i.test(text) || text === 'play' || text === 'play video') {
+      return {
+        rawUserText: cleanText,
+        goal: 'Resume media playback',
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'RESUME',
+        entities: { action: 'resume' },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        spokenAcknowledgment: 'Resuming playback.',
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
     // 3. STANDALONE DIRECT URL / NAMED SITE NAVIGATION (<1ms)
     const namedSites: Record<string, { url: string; name: string }> = {
       youtube: { url: 'https://www.youtube.com', name: 'YouTube' },
@@ -484,7 +593,78 @@ Output strictly valid JSON matching this schema:
     }
 
     // 4. STANDALONE SEARCH / MEDIA QUERIES (<1ms)
-    const playYtMatch = text.match(/^(?:play|listen\s+to)\s+(.+?)\s+on\s+youtube$/i);
+    // Relative Ordinal Video Selection: "play the second one", "play #2", "play the 1st video", "play result #3"
+    const playOrdinalMatch = text.match(/^play\s+(?:the\s+)?(?:video\s+|result\s+|song\s+)?(?:#|number\s*)?([1-5])$/i) ||
+                             text.match(/^play\s+(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s*(?:one|video|song|result)?$/i);
+    if (playOrdinalMatch) {
+      let index = 1;
+      const rawIdx = playOrdinalMatch[1].toLowerCase();
+      if (rawIdx === 'first' || rawIdx === '1st' || rawIdx === '1') index = 1;
+      else if (rawIdx === 'second' || rawIdx === '2nd' || rawIdx === '2') index = 2;
+      else if (rawIdx === 'third' || rawIdx === '3rd' || rawIdx === '3') index = 3;
+      else if (rawIdx === 'fourth' || rawIdx === '4th' || rawIdx === '4') index = 4;
+      else if (rawIdx === 'fifth' || rawIdx === '5th' || rawIdx === '5') index = 5;
+
+      return {
+        rawUserText: cleanText,
+        goal: `Play result #${index}`,
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'PLAY_ORDINAL',
+        entities: { platform: 'YouTube', index },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        spokenAcknowledgment: `Playing result #${index}.`,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // YouTube Music: "play <query> on youtube music"
+    const playYtMusicMatch = text.match(/^(?:play|listen\s+to)\s+(?:the\s+)?(?:song\s+)?(.+?)(?:\s+song)?\s+on\s+(?:youtube\s+music|yt\s+music)$/i);
+    if (playYtMusicMatch) {
+      const query = playYtMusicMatch[1].trim();
+      const targetUrl = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+      return {
+        rawUserText: cleanText,
+        goal: `Play "${query}" on YouTube Music`,
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'PLAY',
+        entities: { platform: 'YouTube Music', query },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        suggestedTargetUrl: targetUrl,
+        spokenAcknowledgment: `Playing ${query} on YouTube Music.`,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // Video on YouTube: "play a video on youtube", "play video on youtube"
+    if (/^(?:play\s+(?:a\s+)?video\s+on\s+youtube|play\s+youtube\s+video)$/i.test(text)) {
+      const targetUrl = 'https://www.youtube.com';
+      return {
+        rawUserText: cleanText,
+        goal: 'Play a video on YouTube',
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'PLAY',
+        entities: { platform: 'YouTube', query: 'popular' },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        suggestedTargetUrl: targetUrl,
+        spokenAcknowledgment: 'Playing a video on YouTube.',
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // YouTube specific query: "play <query> on youtube"
+    const playYtMatch = text.match(/^(?:play|listen\s+to)\s+(?:the\s+)?(?:song\s+|video\s+)?(.+?)(?:\s+(?:song|video))?\s+on\s+youtube$/i);
     if (playYtMatch) {
       const query = playYtMatch[1].trim();
       const targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -500,6 +680,28 @@ Output strictly valid JSON matching this schema:
         isFastPath: true,
         suggestedTargetUrl: targetUrl,
         spokenAcknowledgment: `Playing ${query} on YouTube.`,
+        confidence: 1.0,
+        isCoherent: true,
+      };
+    }
+
+    // Generic "play <query>" (e.g. "play loose yourself", "play bohemian rhapsody")
+    const genericPlayMatch = text.match(/^(?:play|listen\s+to)\s+(?:the\s+)?(?:song\s+|video\s+)?(.+?)(?:\s+(?:song|video))?$/i);
+    if (genericPlayMatch) {
+      const query = genericPlayMatch[1].trim();
+      const targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+      return {
+        rawUserText: cleanText,
+        goal: `Play "${query}"`,
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'PLAY',
+        entities: { platform: 'YouTube', query },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        suggestedTargetUrl: targetUrl,
+        spokenAcknowledgment: `Playing ${query}.`,
         confidence: 1.0,
         isCoherent: true,
       };
@@ -804,9 +1006,11 @@ Output strictly valid JSON matching this schema:
   private cleanWakeAndPreambles(text: string): string {
     return text
       .replace(/^(?:hey|hi|hello|ok|okay)?\s*tesseract[,.]?\s*/i, '')
+      .replace(/^(?:i\s+want\s+(?:you\s+)?to\s+|would\s+you\s+(?:please\s+)?|can\s+we\s+|let\'?s\s+|just\s+)/i, '')
       .replace(/^(?:can\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
       .replace(/^(?:could\s+you\s+(?:please\s+)?(?:go\s+ahead\s+and\s+)?)/i, '')
       .replace(/^(?:please\s+)/i, '')
+      .replace(/['"]/g, '')
       .replace(/[?.!]+$/g, '')
       .trim();
   }

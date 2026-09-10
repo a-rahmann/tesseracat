@@ -14,11 +14,22 @@ import { AgentModel } from '../ai/model.js';
 import { AgentTool } from './tool-registry.js';
 import { CancellationToken } from './cancellation.js';
 import { PlanStep } from './types.js';
+export interface ActionLoopResult {
+    success: boolean;
+    summary: string;
+    errorDetails?: {
+        message: string;
+        stepNumber?: number;
+        toolName?: string;
+        suggestedRemedy?: string;
+        canAutoRetry: boolean;
+    };
+}
 export interface ActionLoopCallbacks {
     onStatus: (status: string) => void;
     onStep: (stepNumber: number, description: string, status: 'ACTIVE' | 'SUCCESS' | 'FAILED') => void;
     onConfirmationRequired: (tool: AgentTool, args: any) => Promise<boolean>;
-    onHumanHandoffRequired?: (type: 'AUTH' | 'CAPTCHA' | 'PAYMENT' | 'CLARIFICATION', message: string) => Promise<boolean>;
+    onHumanHandoffRequired?: (type: 'AUTH' | 'CAPTCHA' | 'PAYMENT' | 'CLARIFICATION' | string, message: string) => Promise<boolean>;
     onFinish: (summary: string) => void;
     onError: (error: string) => void;
 }
@@ -27,10 +38,7 @@ export declare class ActionLoop {
     private maxSteps;
     private maxRetriesPerAction;
     constructor(model: AgentModel, maxSteps?: number);
-    run(goal: string, callbacks: ActionLoopCallbacks, token: CancellationToken, initialPlanSteps?: PlanStep[]): Promise<{
-        success: boolean;
-        summary: string;
-    }>;
+    run(goal: string, callbacks: ActionLoopCallbacks, token: CancellationToken, initialPlanSteps?: PlanStep[]): Promise<ActionLoopResult>;
     /**
      * 7-Stage Intelligent Recovery:
      * 1. Observe current page state

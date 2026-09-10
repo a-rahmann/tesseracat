@@ -248,10 +248,11 @@ export const INJECTED_DOM_SNAPSHOT_SCRIPT = `
 `;
 
 export class AccessibilityTreeFormatter {
-  public static toCompactString(elements: any[]): string {
+  public static toCompactString(elements: any[], maxElements = 45): string {
     if (!elements || elements.length === 0) return 'No interactive elements observed.';
 
-    return elements
+    const prioritized = elements.slice(0, maxElements);
+    let output = prioritized
       .map((el) => {
         const idx = el.index || el.id;
         const desc = el.name ? `"${el.name}"` : el.text ? `"${el.text}"` : '';
@@ -280,6 +281,11 @@ export class AccessibilityTreeFormatter {
         return `[${idx}] ${el.role}: ${desc}${val}${dis}${side}${scope}`;
       })
       .join('\n');
+
+    if (elements.length > maxElements) {
+      output += `\n... and ${elements.length - maxElements} more elements.`;
+    }
+    return output;
   }
 
   public static toNumberedList(elements: any[]): string {

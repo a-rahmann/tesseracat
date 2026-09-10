@@ -7,6 +7,7 @@
 import { AgentGoal, AgentPlan, PlanStep } from './types.js';
 import { AgentModel } from '../ai/model.js';
 import { OllamaGemmaModel } from '../ai/ollama-gemma.js';
+import { LearnedRulesStore } from '../memory/learned-rules-store.js';
 
 export interface PlannerContext {
   currentUrl: string;
@@ -62,6 +63,8 @@ export class Planner {
       ? `Goal Subtasks Identified by NLU:\n${goal.subTasks.map((st, i) => `${i + 1}. ${st}`).join('\n')}`
       : '';
 
+    const learnedRules = LearnedRulesStore.getInstance().formatRulesPrompt(context.currentUrl, goal.goal);
+
     const prompt = `You are Tesseract's Autonomous Browser Mission Planner.
 Break down the user's objective into 2 to 6 concrete, sequential browser steps.
 
@@ -71,6 +74,7 @@ Entities: ${JSON.stringify(goal.entities)}
 Current Browser URL: "${context.currentUrl}"
 Current Page Title: "${context.pageTitle}"
 ${subtaskContext}
+${learnedRules}
 
 Available Tools:
 ${context.availableTools.join(', ')}
@@ -81,6 +85,7 @@ Guidelines:
 3. For multi-site comparison, plan to search site A, collect data, search site B, collect data, and synthesize.
 4. Prefer high-level semantic tools (e.g. "instagram.getMessages", "youtube.search") when targeting supported platforms.
 5. Keep steps granular and verifiable.
+6. Adhere to any Learned User Rules and Past Self-Corrections listed above!
 
 Output strictly valid JSON matching this schema:
 [
@@ -144,6 +149,8 @@ Output strictly valid JSON matching this schema:
     failureReason: string,
     context: PlannerContext
   ): Promise<PlanStep[]> {
+    const learnedRules = LearnedRulesStore.getInstance().formatRulesPrompt(context.currentUrl, failureReason);
+
     const prompt = `A step in our autonomous browser plan failed. Generate 1 to 3 alternative recovery steps to accomplish the goal.
 
 Overall Goal: "${goal}"
@@ -152,6 +159,7 @@ Failure Reason: "${failureReason}"
 Active URL: "${context.currentUrl}"
 Active Page Elements Summary:
 ${context.compactSnapshot || 'None'}
+${learnedRules}
 
 Available Tools:
 ${context.availableTools.join(', ')}

@@ -250,10 +250,11 @@ exports.INJECTED_DOM_SNAPSHOT_SCRIPT = `
 })();
 `;
 class AccessibilityTreeFormatter {
-    static toCompactString(elements) {
+    static toCompactString(elements, maxElements = 45) {
         if (!elements || elements.length === 0)
             return 'No interactive elements observed.';
-        return elements
+        const prioritized = elements.slice(0, maxElements);
+        let output = prioritized
             .map((el) => {
             const idx = el.index || el.id;
             const desc = el.name ? `"${el.name}"` : el.text ? `"${el.text}"` : '';
@@ -279,6 +280,10 @@ class AccessibilityTreeFormatter {
             return `[${idx}] ${el.role}: ${desc}${val}${dis}${side}${scope}`;
         })
             .join('\n');
+        if (elements.length > maxElements) {
+            output += `\n... and ${elements.length - maxElements} more elements.`;
+        }
+        return output;
     }
     static toNumberedList(elements) {
         return this.toCompactString(elements);

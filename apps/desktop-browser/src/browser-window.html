@@ -835,6 +835,65 @@
       font-size: 10px;
       font-weight: 600;
     }
+    .hud-badge.error {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+
+    .hud-error-card {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .hud-error-card.hidden { display: none !important; }
+    .hud-error-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .hud-error-desc {
+      color: var(--text);
+      font-size: 11px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .hud-error-remedy {
+      color: #93c5fd;
+      font-size: 10px;
+      line-height: 1.35;
+      background: rgba(59, 130, 246, 0.1);
+      padding: 6px 8px;
+      border-radius: 4px;
+      border-left: 2px solid #3b82f6;
+    }
+    .hud-error-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .hud-teach-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .hud-teach-row.hidden { display: none !important; }
+    .hud-teach-row input {
+      flex: 1;
+      height: 26px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      padding: 0 8px;
+      font-size: 11px;
+    }
 
     /* ═══════════════════════════════════════════════════════════
        6. ON-DEMAND AI WORKSPACE FLYOUT (OPENS ONLY ON REQUEST)
@@ -1195,6 +1254,27 @@
         <div class="hud-row">
           <span class="hud-label">Execution</span>
           <span class="hud-val" id="hud-exec-val">—</span>
+        </div>
+
+        <!-- Actionable Error & Self-Healing Hub -->
+        <div id="hud-error-section" class="hud-error-card hidden">
+          <div class="hud-error-title">
+            <span style="color: #ef4444">⚠ Issue Detected</span>
+            <span id="hud-error-code" class="hud-badge error">ACTION FAILED</span>
+          </div>
+          <div class="hud-error-desc" id="hud-error-desc">—</div>
+          <div class="hud-error-remedy" id="hud-error-remedy">
+            <strong>Suggested Solution:</strong> <span id="hud-error-remedy-text">Try auto-resolving with refreshed state or teaching the model.</span>
+          </div>
+          <div class="hud-error-actions">
+            <button class="pill-btn primary" id="btn-hud-auto-resolve">⚡ Auto-Resolve & Retry</button>
+            <button class="pill-btn" id="btn-hud-teach">Teach Model</button>
+            <button class="pill-btn" id="btn-hud-dismiss-error">Dismiss</button>
+          </div>
+          <div id="hud-teach-input-row" class="hud-teach-row hidden">
+            <input type="text" id="hud-teach-input" placeholder="Tell the model what to do instead (e.g. 'Click the second button')">
+            <button class="pill-btn primary" id="btn-hud-teach-save">Save & Apply</button>
+          </div>
         </div>
       </div>
 
@@ -1677,7 +1757,7 @@
         }
       });
 
-      // Inject intelligent login watcher whenever page DOM is ready
+      // Inject intelligent login watcher & manual override watcher whenever page DOM is ready
       webviewEl.addEventListener('dom-ready', () => {
         try {
           const currentUrl = webviewEl.getURL?.() || '';
@@ -1687,13 +1767,46 @@
               automator.injectLoginWatcher(domain).catch(() => {});
             }
           }
+
+          // User Manual Override: Injected listener detects direct user clicks on page/video
+          webviewEl.executeJavaScript(`
+            (() => {
+              if (window.__tesseractOverrideInjected) return;
+              window.__tesseractOverrideInjected = true;
+              ['pointerdown', 'mousedown', 'click'].forEach(evtType => {
+                window.addEventListener(evtType, () => {
+                  console.log('[Tesseract DOM] USER_INTERACTION');
+                }, { capture: true, passive: true });
+              });
+            })();
+          `).catch(() => {});
         } catch (_) {}
       });
 
-      // Capture DOMAgent events from webview (5s inactivity login, new username typed)
+      // Also listen on webview element in host DOM
+      webviewEl.addEventListener('mousedown', () => {
+        if (agentRuntime) {
+          const st = agentRuntime.getState();
+          if (st.status === 'executing' || st.status === 'planning' || st.status === 'speaking') {
+            agentRuntime.handleUserOverride();
+            showToast('✋ User override: Task paused');
+          }
+        }
+      }, { capture: true });
+
+      // Capture DOMAgent events from webview (5s inactivity login, new username typed, user manual override)
       webviewEl.addEventListener('console-message', (e) => {
         if (e.message && e.message.includes('[Tesseract DOM]')) {
           console.log('[Webview Console]', e.message);
+          if (e.message.includes('USER_INTERACTION')) {
+            if (agentRuntime) {
+              const st = agentRuntime.getState();
+              if (st.status === 'executing' || st.status === 'planning' || st.status === 'speaking') {
+                agentRuntime.handleUserOverride();
+                showToast('✋ User override: Task paused');
+              }
+            }
+          }
           if (e.message.includes('Auto-submitting login')) {
             showToast('⚡ Password entered — 5s typing pause auto-submitting login!');
           }
@@ -1930,6 +2043,8 @@
           aiPillLabel.textContent = state.latencySummary ? `✓ Done (${state.latencySummary.split('| Total: ')[1] || 'Done'})` : '✓ Done';
           if (aiPillProgress) aiPillProgress.style.width = '100%';
           if (hudExecVal) hudExecVal.textContent = state.latencySummary ? `Agent: ${state.latencySummary}` : `Agent: Done | ${state.currentAction || 'Task finished'}`;
+          const errCard = document.getElementById('hud-error-section');
+          if (errCard) errCard.classList.add('hidden');
           if (star) {
             star.classList.remove('executing', 'thinking', 'recording');
             star.classList.add('completed');
@@ -1943,6 +2058,22 @@
         } else if (state.status === 'cancelled' || state.status === 'error') {
           aiPillLabel.textContent = state.status === 'cancelled' ? 'Stopped' : '⚠ Action error';
           if (hudExecVal) hudExecVal.textContent = `Agent: ${state.status} | ${state.error || state.currentAction || ''}`;
+
+          if (state.status === 'error' || state.error) {
+            const errCard = document.getElementById('hud-error-section');
+            const errDesc = document.getElementById('hud-error-desc');
+            const errRemedy = document.getElementById('hud-error-remedy-text');
+            if (errCard) errCard.classList.remove('hidden');
+            if (errDesc) errDesc.textContent = state.errorDetails?.message || state.error || 'Action failed unexpectedly';
+            if (errRemedy) errRemedy.textContent = state.errorDetails?.suggestedRemedy || 'Click Auto-Resolve & Retry or teach the model what to do.';
+
+            // Automatically open developer HUD so user can immediately see diagnostics & self-heal
+            const hud = document.getElementById('developer-hud');
+            if (hud && hud.classList.contains('hidden')) {
+              hud.classList.remove('hidden');
+              document.getElementById('btn-hud-toggle')?.classList.add('active');
+            }
+          }
         }
 
         if (flyoutTitle && (state.goal || state.task)) {
@@ -2307,6 +2438,47 @@
       }
     }
     document.getElementById('btn-hud-toggle')?.addEventListener('click', toggleHUD);
+
+    // Error & Self-Healing Hub Event Listeners
+    document.getElementById('btn-hud-auto-resolve')?.addEventListener('click', () => {
+      if (agentRuntime) {
+        showToast('⚡ Auto-resolving & retrying task...');
+        document.getElementById('hud-error-section')?.classList.add('hidden');
+        agentRuntime.retryActiveTaskWithRecovery();
+      }
+    });
+
+    document.getElementById('btn-hud-teach')?.addEventListener('click', () => {
+      const row = document.getElementById('hud-teach-input-row');
+      if (row) {
+        row.classList.toggle('hidden');
+        if (!row.classList.contains('hidden')) {
+          document.getElementById('hud-teach-input')?.focus();
+        }
+      }
+    });
+
+    document.getElementById('btn-hud-teach-save')?.addEventListener('click', () => {
+      const input = document.getElementById('hud-teach-input');
+      const val = (input?.value || '').trim();
+      if (val && agentRuntime) {
+        showToast(`🧠 Learned: "${val}" — Retrying with rule`);
+        document.getElementById('hud-error-section')?.classList.add('hidden');
+        document.getElementById('hud-teach-input-row')?.classList.add('hidden');
+        if (input) input.value = '';
+        agentRuntime.retryActiveTaskWithRecovery(val);
+      }
+    });
+
+    document.getElementById('hud-teach-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('btn-hud-teach-save')?.click();
+      }
+    });
+
+    document.getElementById('btn-hud-dismiss-error')?.addEventListener('click', () => {
+      document.getElementById('hud-error-section')?.classList.add('hidden');
+    });
 
     // AI Flyout Toggle
     function toggleAIFlyout(force) {

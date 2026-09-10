@@ -12,6 +12,7 @@ const ollama_gemma_js_1 = require("../ai/ollama-gemma.js");
 const action_loop_js_1 = require("./action-loop.js");
 const cancellation_js_1 = require("./cancellation.js");
 const conversation_manager_js_1 = require("../memory/conversation-manager.js");
+const context_manager_js_1 = require("../memory/context-manager.js");
 const youtube_js_1 = require("../adapters/youtube.js");
 const browser_automator_js_1 = require("../browser/browser-automator.js");
 const browser_perception_js_1 = require("../browser/browser-perception.js");
@@ -20,11 +21,13 @@ const skill_registry_js_1 = require("../skills/skill-registry.js");
 const task_recorder_js_1 = require("./task-recorder.js");
 const task_checkpoint_manager_js_1 = require("./task-checkpoint-manager.js");
 const temporal_memory_js_1 = require("../memory/temporal-memory.js");
+const browser_state_store_js_1 = require("../memory/browser-state-store.js");
 const natural_language_interpreter_js_1 = require("./natural-language-interpreter.js");
 const planner_js_1 = require("./planner.js");
 const tool_registry_js_1 = require("./tool-registry.js");
 const tts_provider_js_1 = require("../voice/tts-provider.js");
 const performance_profiler_js_1 = require("./performance-profiler.js");
+const learned_rules_store_js_1 = require("../memory/learned-rules-store.js");
 class AgentRuntime {
     static instance = null;
     voiceManager;
@@ -32,6 +35,7 @@ class AgentRuntime {
     actionLoop;
     tts;
     currentCancellationToken = null;
+    lastExecutedGoal;
     state = {
         status: 'idle',
         progress: 0,
@@ -91,6 +95,47 @@ class AgentRuntime {
             progress: 0,
         });
     }
+    /**
+     * User Manual Override:
+     * Called when the user clicks/interacts with the webview or video during autonomous execution.
+     * Immediately halts execution, stops TTS speech, and gives control back to the user without conflict.
+     */
+    handleUserOverride() {
+        if (this.state.status === 'executing' || this.state.status === 'planning' || this.state.status === 'speaking') {
+            console.log('[AgentRuntime] User manual interaction detected. Overriding active agent task.');
+            this.cancelActiveTask();
+            this.updateState({
+                status: 'idle',
+                currentAction: 'User override: Task paused.',
+                progress: 0,
+            });
+            this.voiceManager.resetToWakeListening();
+        }
+    }
+    /**
+     * Re-runs the active or last failed task using self-healing / alternative recovery.
+     * Can be triggered directly by the user via voice/text or via the HUD [Auto-Resolve & Retry] button.
+     */
+    async retryActiveTaskWithRecovery(userCorrection) {
+        const targetGoal = this.lastExecutedGoal;
+        if (!targetGoal) {
+            await this.speak("There is no previous task to retry.");
+            return;
+        }
+        console.log(`[AgentRuntime] Initiating self-healing retry for "${targetGoal}"${userCorrection ? ` with correction: "${userCorrection}"` : ''}`);
+        if (userCorrection) {
+            const activeTab = browser_state_store_js_1.BrowserStateStore.getInstance().getActiveTab();
+            const domain = activeTab?.url ? new URL(activeTab.url).hostname.replace(/^www\./, '') : undefined;
+            learned_rules_store_js_1.LearnedRulesStore.getInstance().recordUserCorrection({
+                domain,
+                pattern: targetGoal,
+                correction: userCorrection,
+            });
+        }
+        // Refresh state and execute with clean recovery context
+        await this.speak(userCorrection ? `Applying your correction and retrying.` : `Initiating self-healing recovery...`);
+        await this.handleUserCommand(targetGoal);
+    }
     async speak(text) {
         if (!text)
             return;
@@ -114,6 +159,7 @@ class AgentRuntime {
             this.voiceManager.resetToWakeListening();
             return;
         }
+        this.lastExecutedGoal = goal;
         console.log(`[AgentRuntime] Received command: "${goal}"`);
         const convManager = conversation_manager_js_1.ConversationManager.getInstance();
         convManager.recordTurn({ speaker: 'user', text: goal });
@@ -220,14 +266,65 @@ class AgentRuntime {
                 profiler.markFirstAction(`Scroll ${fastPathGoal.entities.direction || 'down'}`);
                 await browser_automator_js_1.BrowserAutomator.getInstance().scroll(fastPathGoal.entities.direction === 'up' ? 'up' : 'down', 450);
             }
-            else if (fastPathGoal.fastPathAction === 'PLAY' && fastPathGoal.suggestedTargetUrl) {
+            else if (fastPathGoal.fastPathAction === 'PLAY') {
                 profiler.markFirstAction(`Playing ${fastPathGoal.entities.query || 'media'}`);
-                profiler.markNavDispatch(fastPathGoal.suggestedTargetUrl);
-                const navUrl = fastPathGoal.suggestedTargetUrl;
+                if (fastPathGoal.suggestedTargetUrl) {
+                    profiler.markNavDispatch(fastPathGoal.suggestedTargetUrl);
+                }
                 const ackText = fastPathGoal.spokenAcknowledgment || 'Playing media.';
                 profiler.markTtsStart(ackText);
                 this.speak(ackText).finally(() => profiler.markTtsEnd()).catch(() => { });
-                browser_automator_js_1.BrowserAutomator.getInstance().navigate(navUrl).catch(() => { });
+                const query = fastPathGoal.entities.query;
+                if (fastPathGoal.entities.platform === 'YouTube Music' && fastPathGoal.suggestedTargetUrl) {
+                    browser_automator_js_1.BrowserAutomator.getInstance().navigate(fastPathGoal.suggestedTargetUrl).then(async () => {
+                        await media_controller_js_1.MediaController.getInstance().play();
+                    }).catch(() => { });
+                }
+                else if (fastPathGoal.entities.platform === 'YouTube' || !fastPathGoal.entities.platform) {
+                    if (query && query !== 'popular' && query !== 'trending') {
+                        youtube_js_1.YouTubeAdapter.searchAndPlay(query, fastPathGoal.entities.index || 1).catch(err => {
+                            console.warn('[AgentRuntime] Fast-path searchAndPlay warning:', err);
+                        });
+                    }
+                    else if (fastPathGoal.suggestedTargetUrl) {
+                        browser_automator_js_1.BrowserAutomator.getInstance().navigate(fastPathGoal.suggestedTargetUrl).then(async () => {
+                            await youtube_js_1.YouTubeAdapter.playResult(1);
+                        }).catch(() => { });
+                    }
+                    else {
+                        media_controller_js_1.MediaController.getInstance().play().catch(() => { });
+                    }
+                }
+                else if (fastPathGoal.suggestedTargetUrl) {
+                    browser_automator_js_1.BrowserAutomator.getInstance().navigate(fastPathGoal.suggestedTargetUrl).catch(() => { });
+                }
+                else {
+                    media_controller_js_1.MediaController.getInstance().play().catch(() => { });
+                }
+            }
+            else if (fastPathGoal.fastPathAction === 'PLAY_ORDINAL') {
+                const index = fastPathGoal.entities.index || 1;
+                profiler.markFirstAction(`Play result #${index}`);
+                const ackText = fastPathGoal.spokenAcknowledgment || `Playing result #${index}.`;
+                profiler.markTtsStart(ackText);
+                this.speak(ackText).finally(() => profiler.markTtsEnd()).catch(() => { });
+                youtube_js_1.YouTubeAdapter.playResult(index).catch(err => {
+                    console.warn('[AgentRuntime] Fast-path playResult warning:', err);
+                });
+            }
+            else if (fastPathGoal.fastPathAction === 'PAUSE') {
+                profiler.markFirstAction('Pause playback');
+                const ackText = fastPathGoal.spokenAcknowledgment || 'Paused.';
+                profiler.markTtsStart(ackText);
+                this.speak(ackText).finally(() => profiler.markTtsEnd()).catch(() => { });
+                await media_controller_js_1.MediaController.getInstance().pause();
+            }
+            else if (fastPathGoal.fastPathAction === 'RESUME') {
+                profiler.markFirstAction('Resume playback');
+                const ackText = fastPathGoal.spokenAcknowledgment || 'Resuming playback.';
+                profiler.markTtsStart(ackText);
+                this.speak(ackText).finally(() => profiler.markTtsEnd()).catch(() => { });
+                await media_controller_js_1.MediaController.getInstance().play();
             }
             else if (fastPathGoal.fastPathAction === 'SEARCH' && fastPathGoal.suggestedTargetUrl) {
                 profiler.markFirstAction(`Searching ${fastPathGoal.entities.query}`);
@@ -255,6 +352,17 @@ class AgentRuntime {
             const breakdown = profiler.markComplete(true);
             task_recorder_js_1.TaskRecorder.getInstance().recordAction(`Executed fast path: ${fastPathGoal.goal}`);
             task_recorder_js_1.TaskRecorder.getInstance().completeTask(`Completed ${fastPathGoal.goal}`);
+            // Record completed command in Chain Memory
+            context_manager_js_1.ContextManager.getInstance().recordChainStep({
+                goal: fastPathGoal.goal,
+                intentCategory: fastPathGoal.intentCategory,
+                action: fastPathGoal.fastPathAction,
+                platform: fastPathGoal.entities?.platform,
+                query: fastPathGoal.entities?.query,
+                targetUrl: fastPathGoal.suggestedTargetUrl,
+                entities: fastPathGoal.entities,
+                resultSummary: `Completed fast path ${fastPathGoal.fastPathAction}`,
+            });
             this.updateState({
                 status: 'success',
                 currentAction: 'Done',
@@ -511,10 +619,22 @@ Give a concise 2-sentence spoken response answering their question based on actu
                 status: result.success ? 'success' : 'error',
                 currentAction: result.summary,
                 currentStep: 'Done',
+                error: !result.success ? result.summary : undefined,
+                errorDetails: !result.success ? (result.errorDetails || {
+                    message: result.summary,
+                    suggestedRemedy: 'Try auto-resolving with refreshed state or teaching the model what to do.',
+                    canAutoRetry: true,
+                }) : undefined,
                 progress: 1.0,
                 latencySummary: breakdown ? profiler.formatSummary(breakdown) : undefined,
             });
             convManager.recordTurn({ speaker: 'assistant', text: result.summary });
+            context_manager_js_1.ContextManager.getInstance().recordChainStep({
+                goal,
+                intentCategory: 'GENERAL_AUTOMATION',
+                action: 'MISSION',
+                resultSummary: result.summary,
+            });
         }
         catch (err) {
             console.error('[AgentRuntime] Mission error:', err);
@@ -525,6 +645,11 @@ Give a concise 2-sentence spoken response answering their question based on actu
                 currentAction: err.message,
                 currentStep: 'Failed',
                 error: err.message,
+                errorDetails: {
+                    message: err.message,
+                    suggestedRemedy: 'Step interrupted or element not found. Click Auto-Resolve & Retry or provide a correction.',
+                    canAutoRetry: true,
+                },
                 progress: 1.0,
                 latencySummary: breakdown ? profiler.formatSummary(breakdown) : undefined,
             });

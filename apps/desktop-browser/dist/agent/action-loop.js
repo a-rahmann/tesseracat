@@ -21,11 +21,12 @@ const task_manager_js_1 = require("./task-manager.js");
 const task_checkpoint_manager_js_1 = require("./task-checkpoint-manager.js");
 const planner_js_1 = require("./planner.js");
 const accessibility_tree_js_1 = require("../browser/accessibility-tree.js");
+const learned_rules_store_js_1 = require("../memory/learned-rules-store.js");
 class ActionLoop {
     model;
-    maxSteps;
-    maxRetriesPerAction = 3;
-    constructor(model, maxSteps = 10) {
+    maxSteps = 15;
+    maxRetriesPerAction = 2;
+    constructor(model, maxSteps = 15) {
         this.model = model;
         this.maxSteps = maxSteps;
     }
@@ -248,12 +249,34 @@ Output strictly valid JSON matching this schema:
                     consecutiveFailures = 0;
                     callbacks.onStep(stepNumber, recovery.recoverySummary || 'Step successfully recovered', 'SUCCESS');
                     taskManager.transitionState('EXECUTING', { currentActionDescription: 'Resumed execution post-recovery' });
+                    // Self-Taught Mistake Learning: Automatically record the recovery workaround so future runs don't repeat the failure!
+                    try {
+                        const currentUrl = (await perception.getSnapshot()).url;
+                        const domain = currentUrl && !currentUrl.startsWith('about:') ? new URL(currentUrl).hostname.replace(/^www\./, '') : undefined;
+                        learned_rules_store_js_1.LearnedRulesStore.getInstance().recordSelfHealingWorkaround({
+                            domain,
+                            pattern: tool.name,
+                            failedAction: `${tool.name} with ${JSON.stringify(decision.arguments)}: ${err.message}`,
+                            successfulWorkaround: recovery.recoverySummary || 'Executed alternative recovery step successfully',
+                        });
+                    }
+                    catch (_) { }
                 }
                 else if (consecutiveFailures >= this.maxRetriesPerAction) {
                     const errStr = `Action ${tool.name} failed and could not be recovered after ${consecutiveFailures} attempts: ${err.message}`;
                     callbacks.onError(errStr);
                     taskManager.transitionState('FAILED', { error: errStr });
-                    return { success: false, summary: errStr };
+                    return {
+                        success: false,
+                        summary: errStr,
+                        errorDetails: {
+                            message: err.message,
+                            stepNumber,
+                            toolName: tool.name,
+                            suggestedRemedy: `Step [${tool.name}] failed. Suggest reloading the page, re-verifying element visibility, or teaching the model a specific element.`,
+                            canAutoRetry: true,
+                        }
+                    };
                 }
             }
             stepNumber++;

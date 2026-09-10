@@ -2,6 +2,8 @@
  * ContextManager: Resolves anaphoric references ("it", "that", "the second one").
  */
 
+import { AgentGoal, PlanStep } from '../agent/types.js';
+
 export interface ContextualEntities {
   activeUrl?: string;
   activeTitle?: string;
@@ -10,9 +12,24 @@ export interface ContextualEntities {
   lastSelectedEntity?: any;
 }
 
+export interface ChainStepNode {
+  id: string;
+  timestamp: number;
+  goal: string;
+  intentCategory: string;
+  action?: string;
+  platform?: string;
+  query?: string;
+  targetUrl?: string;
+  resultSummary?: string;
+  entities?: Record<string, any>;
+}
+
 export class ContextManager {
   private static instance: ContextManager | null = null;
   private currentContext: ContextualEntities = {};
+  private chainHistory: ChainStepNode[] = [];
+  private maxChainNodes = 30;
 
   public static getInstance(): ContextManager {
     if (!ContextManager.instance) {
@@ -27,6 +44,115 @@ export class ContextManager {
 
   public getContext(): ContextualEntities {
     return { ...this.currentContext };
+  }
+
+  /**
+   * Chain Memory: Record a completed or executing command step into the chain.
+   */
+  public recordChainStep(node: Omit<ChainStepNode, 'id' | 'timestamp'>): ChainStepNode {
+    const fullNode: ChainStepNode = {
+      id: `chain-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      ...node,
+    };
+    this.chainHistory.push(fullNode);
+    if (this.chainHistory.length > this.maxChainNodes) {
+      this.chainHistory.shift();
+    }
+    console.log(`[ChainMemory] Recorded step: action=${fullNode.action || 'n/a'} platform=${fullNode.platform || 'unknown'} goal="${fullNode.goal}"`);
+    return fullNode;
+  }
+
+  public getChainHistory(): ChainStepNode[] {
+    return [...this.chainHistory];
+  }
+
+  public getLastChainStep(): ChainStepNode | undefined {
+    return this.chainHistory.length > 0 ? this.chainHistory[this.chainHistory.length - 1] : undefined;
+  }
+
+  /**
+   * Identifies the current platform from URL or recent chain memory.
+   */
+  public getActivePlatform(activeUrl?: string): string | undefined {
+    const url = (activeUrl || this.currentContext.activeUrl || '').toLowerCase();
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube';
+    if (url.includes('instagram.com')) return 'Instagram';
+    if (url.includes('google.com')) return 'Google';
+    if (url.includes('amazon.com')) return 'Amazon';
+    if (url.includes('github.com')) return 'GitHub';
+    if (url.includes('reddit.com')) return 'Reddit';
+    if (url.includes('twitter.com') || url.includes('x.com')) return 'Twitter';
+
+    // Fallback to last recorded platform from chain memory
+    const last = this.getLastChainStep();
+    return last?.platform;
+  }
+
+  /**
+   * Chain Memory Optimizer & Pruner:
+   * "it understands what it did cuts the part and then does something it should find a much better and efficent way to solve requests"
+   * Prunes redundant navigation or repetition when the requested platform is already active or in memory.
+   */
+  public optimizeAndPrune(goal: AgentGoal, activeUrl: string): AgentGoal {
+    const activePlatform = this.getActivePlatform(activeUrl);
+    const lastChain = this.getLastChainStep();
+
+    // 1. Ordinal Reference Resolution using Chain Memory
+    // e.g. User says "play the second one", "play 2nd video", "open the 3rd result"
+    const ordinal = this.resolveOrdinal(goal.rawUserText);
+    if (ordinal && (activePlatform === 'YouTube' || lastChain?.platform === 'YouTube')) {
+      console.log(`[ChainMemory] Resolved relative ordinal #${ordinal.index} on YouTube`);
+      return {
+        ...goal,
+        goal: `Play YouTube result #${ordinal.index}`,
+        intentCategory: 'MEDIA_CONTROL',
+        fastPathAction: 'PLAY_ORDINAL',
+        entities: { platform: 'YouTube', index: ordinal.index },
+        requiresBrowser: true,
+        requiresPerception: false,
+        isCompound: false,
+        isFastPath: true,
+        spokenAcknowledgment: `Playing result #${ordinal.index}.`,
+        confidence: 1.0,
+      };
+    }
+
+    // 2. Redundant Preamble Pruning in Plans:
+    // e.g., if goal has initialPlan and Step 1 is navigating to a platform that is ALREADY loaded
+    if (goal.initialPlan && goal.initialPlan.length > 1) {
+      const step1 = goal.initialPlan[0];
+      if (step1.toolName === 'browser.navigate' && step1.parameters?.url) {
+        try {
+          const targetHost = new URL(step1.parameters.url).hostname.replace(/^www\./, '');
+          const currentHost = activeUrl && !activeUrl.startsWith('about:') ? new URL(activeUrl).hostname.replace(/^www\./, '') : '';
+
+          if (targetHost && currentHost && (currentHost.includes(targetHost) || targetHost.includes(currentHost))) {
+            console.log(`[ChainMemory] Pruning redundant navigation to "${step1.parameters.url}" because active host is "${currentHost}".`);
+            // Prune step 1 and renumber remaining steps
+            const prunedSteps: PlanStep[] = goal.initialPlan.slice(1).map((s, idx) => ({
+              ...s,
+              stepNumber: idx + 1,
+            }));
+
+            return {
+              ...goal,
+              initialPlan: prunedSteps,
+              spokenAcknowledgment: goal.spokenAcknowledgment?.replace(/^(?:Opening|Navigating to)\s+[^,]+,\s*/i, ''),
+            };
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. Search Deduplication / Chained Continuation:
+    // If the user says "search for <x>" or "now search <x>" and we are already on YouTube or Google,
+    // ensure the platform is retained from chain memory without falling through to generic web search.
+    if ((goal.intentCategory === 'RESEARCH' || goal.intentCategory === 'MEDIA_CONTROL') && !goal.entities?.platform && activePlatform) {
+      goal.entities = { ...goal.entities, platform: activePlatform };
+    }
+
+    return goal;
   }
 
   public setOptionsList(options: string[] | Array<{ label: string; value: any }>): void {

@@ -14,6 +14,13 @@ export interface AgentTaskState {
         status: string;
     }>;
     error?: string;
+    errorDetails?: {
+        message: string;
+        stepNumber?: number;
+        toolName?: string;
+        suggestedRemedy?: string;
+        canAutoRetry: boolean;
+    };
     currentStep?: string;
     latencySummary?: string;
 }
@@ -25,6 +32,7 @@ export declare class AgentRuntime {
     private actionLoop;
     private tts;
     private currentCancellationToken;
+    private lastExecutedGoal?;
     private state;
     private listeners;
     private constructor();
@@ -33,6 +41,17 @@ export declare class AgentRuntime {
     subscribe(listener: AgentStateListener): () => void;
     private updateState;
     cancelActiveTask(): void;
+    /**
+     * User Manual Override:
+     * Called when the user clicks/interacts with the webview or video during autonomous execution.
+     * Immediately halts execution, stops TTS speech, and gives control back to the user without conflict.
+     */
+    handleUserOverride(): void;
+    /**
+     * Re-runs the active or last failed task using self-healing / alternative recovery.
+     * Can be triggered directly by the user via voice/text or via the HUD [Auto-Resolve & Retry] button.
+     */
+    retryActiveTaskWithRecovery(userCorrection?: string): Promise<void>;
     speak(text: string): Promise<void>;
     /**
      * Main command dispatch pipeline.

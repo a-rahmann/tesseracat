@@ -23,22 +23,35 @@ import { AgentDecision, PlanStep } from './types.js';
 import { Planner } from './planner.js';
 import { PageSnapshot } from '../browser/snapshot.js';
 import { AccessibilityTreeFormatter } from '../browser/accessibility-tree.js';
+import { LearnedRulesStore } from '../memory/learned-rules-store.js';
+
+export interface ActionLoopResult {
+  success: boolean;
+  summary: string;
+  errorDetails?: {
+    message: string;
+    stepNumber?: number;
+    toolName?: string;
+    suggestedRemedy?: string;
+    canAutoRetry: boolean;
+  };
+}
 
 export interface ActionLoopCallbacks {
   onStatus: (status: string) => void;
   onStep: (stepNumber: number, description: string, status: 'ACTIVE' | 'SUCCESS' | 'FAILED') => void;
   onConfirmationRequired: (tool: AgentTool, args: any) => Promise<boolean>;
-  onHumanHandoffRequired?: (type: 'AUTH' | 'CAPTCHA' | 'PAYMENT' | 'CLARIFICATION', message: string) => Promise<boolean>;
+  onHumanHandoffRequired?: (type: 'AUTH' | 'CAPTCHA' | 'PAYMENT' | 'CLARIFICATION' | string, message: string) => Promise<boolean>;
   onFinish: (summary: string) => void;
   onError: (error: string) => void;
 }
 
 export class ActionLoop {
   private model: AgentModel;
-  private maxSteps: number;
-  private maxRetriesPerAction = 3;
+  private maxSteps = 15;
+  private maxRetriesPerAction = 2;
 
-  constructor(model: AgentModel, maxSteps = 10) {
+  constructor(model: AgentModel, maxSteps: number = 15) {
     this.model = model;
     this.maxSteps = maxSteps;
   }
@@ -48,7 +61,7 @@ export class ActionLoop {
     callbacks: ActionLoopCallbacks,
     token: CancellationToken,
     initialPlanSteps?: PlanStep[]
-  ): Promise<{ success: boolean; summary: string }> {
+  ): Promise<ActionLoopResult> {
     console.log(`[ActionLoop] Starting autonomous mission: "${goal}"`);
     callbacks.onStatus('Initializing autonomous browser mission...');
 
@@ -305,11 +318,33 @@ Output strictly valid JSON matching this schema:
           consecutiveFailures = 0;
           callbacks.onStep(stepNumber, recovery.recoverySummary || 'Step successfully recovered', 'SUCCESS');
           taskManager.transitionState('EXECUTING', { currentActionDescription: 'Resumed execution post-recovery' });
+
+          // Self-Taught Mistake Learning: Automatically record the recovery workaround so future runs don't repeat the failure!
+          try {
+            const currentUrl = (await perception.getSnapshot()).url;
+            const domain = currentUrl && !currentUrl.startsWith('about:') ? new URL(currentUrl).hostname.replace(/^www\./, '') : undefined;
+            LearnedRulesStore.getInstance().recordSelfHealingWorkaround({
+              domain,
+              pattern: tool.name,
+              failedAction: `${tool.name} with ${JSON.stringify(decision.arguments)}: ${err.message}`,
+              successfulWorkaround: recovery.recoverySummary || 'Executed alternative recovery step successfully',
+            });
+          } catch (_) {}
         } else if (consecutiveFailures >= this.maxRetriesPerAction) {
           const errStr = `Action ${tool.name} failed and could not be recovered after ${consecutiveFailures} attempts: ${err.message}`;
           callbacks.onError(errStr);
           taskManager.transitionState('FAILED', { error: errStr });
-          return { success: false, summary: errStr };
+          return {
+            success: false,
+            summary: errStr,
+            errorDetails: {
+              message: err.message,
+              stepNumber,
+              toolName: tool.name,
+              suggestedRemedy: `Step [${tool.name}] failed. Suggest reloading the page, re-verifying element visibility, or teaching the model a specific element.`,
+              canAutoRetry: true,
+            }
+          };
         }
       }
 
