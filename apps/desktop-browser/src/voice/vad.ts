@@ -49,9 +49,9 @@ export class VoiceActivityDetector {
     const msPerFrame = (this.frameSize / this.sampleRate) * 1000;
 
     const minSpeechMs = config.minSpeechDurationMs ?? 180;
-    const trailingMs = Math.max(600, config.trailingSilenceMs ?? 1400);
-    const intraPauseMs = Math.max(trailingMs, config.maxIntraPauseMs ?? 1600);
-    const maxDurationMs = config.maxCommandDurationMs ?? 10000;
+    const trailingMs = Math.max(800, config.trailingSilenceMs ?? 1600);
+    const intraPauseMs = Math.max(trailingMs, config.maxIntraPauseMs ?? 2000);
+    const maxDurationMs = config.maxCommandDurationMs ?? 14000;
 
     this.minSpeechFrames = Math.max(3, Math.round(minSpeechMs / msPerFrame));
     this.trailingSilenceFrames = Math.round(trailingMs / msPerFrame);
@@ -186,10 +186,12 @@ export class VoiceActivityDetector {
           this.consecutiveSpeechFrames = 0;
 
           // Adaptive silence cutoff:
-          // If total spoken speech was short (<600ms), use tighter trailing silence (~800ms) to reject bumps/breaths.
-          // If user has spoken substantive command (>1.5s), grant full intra-pause window (~1600ms) so compound clauses are preserved.
+          // If total spoken speech was very short (<350ms), use tighter trailing silence to reject brief noise bursts.
+          // As long as the user has begun a genuine command (>=350ms), grant the full intra-pause window (~2000ms)
+          // so natural hesitation between compound clauses (e.g. "open YouTube ... [pause] ... and play a random video")
+          // is never prematurely truncated!
           const currentSpeechMs = (this.totalSpeechFrames * this.frameSize / this.sampleRate) * 1000;
-          const requiredSilenceFrames = currentSpeechMs > 1500
+          const requiredSilenceFrames = currentSpeechMs >= 350
             ? this.maxIntraPauseFrames
             : this.trailingSilenceFrames;
 

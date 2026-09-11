@@ -160,3 +160,58 @@ test('5. Non-Cancelling TTS: Speaker Audio Does Not Trigger Task Cancellation', 
   // Return to normal
   vm.resetVoiceSession();
 });
+
+test('6. Wake Word: Realistic Conversational Volume (RMS ~0.024) Confirms "Hey/Hi Tesseract"', () => {
+  const detector = new WakeWordDetector({
+    debounceMs: 1000,
+    threshold: 0.85,
+  });
+
+  let detectedPhrase = '';
+  detector.onWakeDetected((result) => {
+    detectedPhrase = result.phrase;
+  });
+
+  // Helper frame generators at standard conversational volume (RMS 0.020 - 0.028)
+  const makeVoicedFrame = () => {
+    const f = new Float32Array(512);
+    for (let i = 0; i < 512; i++) f[i] = Math.sin(i * 0.09) * 0.035; // RMS ~0.025, ZCR ~0.03
+    return f;
+  };
+
+  const makeSibilantFrame = () => {
+    const f = new Float32Array(512);
+    for (let i = 0; i < 512; i++) {
+      // High frequency alternating noise: ZCR ~0.45, highFreqRatio ~0.5, RMS ~0.024
+      f[i] = ((i % 2 === 0 ? 1 : -1) * (0.02 + Math.random() * 0.01));
+    }
+    return f;
+  };
+
+  const makeSilenceFrame = () => {
+    const f = new Float32Array(512);
+    for (let i = 0; i < 512; i++) f[i] = (Math.random() - 0.5) * 0.002;
+    return f;
+  };
+
+  // 1. Pre-roll ambient silence (5 frames)
+  for (let i = 0; i < 5; i++) detector.processChunk(makeSilenceFrame());
+
+  // 2. Stage 0: "Hey" / "Hi" (4 voiced frames, ~128ms)
+  for (let i = 0; i < 4; i++) detector.processChunk(makeVoicedFrame());
+
+  // 3. Stage 1: "Tess" (4 sibilant frames, ~128ms)
+  for (let i = 0; i < 4; i++) detector.processChunk(makeSibilantFrame());
+
+  // 4. Stage 2: "er" (3 vocalic frames, ~96ms)
+  for (let i = 0; i < 3; i++) detector.processChunk(makeVoicedFrame());
+
+  // 5. Stage 3: "act" (2 plosive/fricative frames, ~64ms)
+  for (let i = 0; i < 2; i++) detector.processChunk(makeSibilantFrame());
+
+  // 6. Trailing pause (3 silence frames, ~96ms)
+  for (let i = 0; i < 3; i++) detector.processChunk(makeSilenceFrame());
+
+  assert.equal(detectedPhrase, 'Hey Tesseract', 'Conversational volume speech must trigger acoustic wake without shouting');
+});
+

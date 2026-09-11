@@ -367,8 +367,8 @@ export class VoiceManager {
     this.hasDetectedUserSpeech = false;
     this.vad.reset();
 
-    // 2.0s grace window allows user to begin command without premature silence cutoff
-    this.wakeGraceUntil = Date.now() + 2000;
+    // 2.5s grace window allows user to begin command without premature silence cutoff
+    this.wakeGraceUntil = Date.now() + 2500;
 
     // Transition to WAKE_DETECTED first so UI chime and animation trigger cleanly!
     this.transitionTo('WAKE_DETECTED', { detail: result.phrase });
@@ -379,19 +379,19 @@ export class VoiceManager {
       }
     }, 180);
 
-    // Inactivity timeout: if user does not speak within 5.0s, return to wake listening without invoking Whisper
+    // Inactivity timeout: if user does not speak within 12.0s, return to wake listening without invoking Whisper
     if (this.maxCommandDurationTimer) clearTimeout(this.maxCommandDurationTimer);
     this.maxCommandDurationTimer = setTimeout(() => {
       if (this.currentState === 'COMMAND_LISTENING' || this.currentState === 'WAKE_DETECTED') {
         if (!this.hasDetectedUserSpeech) {
-          console.log('[VoiceManager] Command listening timed out (no user speech detected within 5.0s). Returning to wake listening.');
+          console.log('[VoiceManager] Command listening timed out (no user speech detected within 12.0s). Returning to wake listening.');
           this.resetToWakeListening();
         } else {
           console.log('[VoiceManager] Max command duration reached.');
           this.finishCommandRecording();
         }
       }
-    }, 5000);
+    }, 12000);
   }
 
   public async startPushToTalk(): Promise<void> {
@@ -411,7 +411,7 @@ export class VoiceManager {
     this.preRollSamples = 0;
     this.hasDetectedUserSpeech = false;
     this.vad.reset();
-    this.wakeGraceUntil = Date.now() + 1500;
+    this.wakeGraceUntil = Date.now() + 2000;
     this.transitionTo('COMMAND_LISTENING', { detail: 'Push to talk' });
 
     if (this.maxCommandDurationTimer) clearTimeout(this.maxCommandDurationTimer);
@@ -419,7 +419,7 @@ export class VoiceManager {
       if (this.currentState === 'COMMAND_LISTENING') {
         this.finishCommandRecording();
       }
-    }, 8500);
+    }, 14000);
   }
 
   public stopRecordingAndTranscribe(): void {

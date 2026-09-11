@@ -33,24 +33,56 @@ class YouTubeAdapter {
     static async playResult(index = 1) {
         const automator = browser_automator_js_1.BrowserAutomator.getInstance();
         const media = media_controller_js_1.MediaController.getInstance();
-        // 1. Wait for video results to render on YouTube (both search and home feed)
-        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"]', 4500);
-        // 2. Locate, click, and navigate directly to target video link
+        // 0. Auto-dismiss Google/YouTube cookie/consent overlays and sign-in modals
+        const dismissOverlaysScript = `
+      (() => {
+        const buttons = Array.from(document.querySelectorAll(
+          'button, tp-yt-paper-button, [role="button"], yt-button-renderer'
+        ));
+        for (const b of buttons) {
+          const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+          if (
+            t === 'reject all' ||
+            t === 'accept all' ||
+            t === 'i agree' ||
+            t === 'stay signed out' ||
+            t === 'no thanks' ||
+            t === 'dismiss' ||
+            t.includes('agree')
+          ) {
+            try { (b as HTMLElement).click(); } catch {}
+          }
+        }
+      })()
+    `;
+        await automator.executeScript(dismissOverlaysScript).catch(() => { });
+        // 1. Wait for video elements or feed to render
+        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch?v="]', 4500);
+        // 2. Locate candidate video URL across modern YouTube home feed, search results, or trending
         const selectScript = `
       (() => {
-        const queryCandidates = () => Array.from(document.querySelectorAll(
-          'ytd-rich-item-renderer a#thumbnail, ytd-rich-grid-media a#thumbnail, ytd-video-renderer a#thumbnail, a#video-title-link, a#video-title, ytd-thumbnail a, a[href*="/watch"]'
-        )).filter(el => {
-          const h = el.getAttribute('href') || (el as any).href || '';
-          return h.includes('/watch') && !h.includes('/shorts/');
-        });
+        const queryCandidates = () => {
+          // Broad search for any watch anchor
+          const anchors = Array.from(document.querySelectorAll(
+            'a#video-title-link, a#video-title, a#thumbnail, ytd-thumbnail a, a[href*="/watch?v="]'
+          ));
+          const seen = new Set();
+          const unique = [];
+          for (const a of anchors) {
+            const h = a.getAttribute('href') || (a as any).href || '';
+            if (h.includes('/watch?v=') && !h.includes('/shorts/') && !seen.has(h)) {
+              seen.add(h);
+              unique.push({ element: a, href: h });
+            }
+          }
+          return unique;
+        };
 
-        let candidates = queryCandidates();
-        const target = (candidates[${Math.max(0, index - 1)}] || candidates[0]) as HTMLElement;
+        const candidates = queryCandidates();
+        const target = candidates[${Math.max(0, index - 1)}] || candidates[0];
         if (target) {
-          const href = target.getAttribute('href') || (target as any).href;
-          try { target.click(); } catch {}
-          return { found: true, href };
+          try { (target.element as HTMLElement).click(); } catch {}
+          return { found: true, href: target.href };
         }
         return { found: false };
       })()
@@ -60,21 +92,33 @@ class YouTubeAdapter {
             await new Promise(r => setTimeout(r, 1200));
             res = await automator.executeScript(selectScript);
         }
-        console.log('[YouTubeAdapter] Located video search result:', res);
+        console.log('[YouTubeAdapter] Located video target:', res);
         if (res?.found && res?.href) {
             const fullUrl = res.href.startsWith('http') ? res.href : `https://www.youtube.com${res.href}`;
+            console.log(`[YouTubeAdapter] Navigating directly to video URL: ${fullUrl}`);
             await automator.navigate(fullUrl);
         }
         else {
-            // Fallback: click first playable media on screen
-            await automator.playFirstMedia();
+            // Fallback: If feed was empty, navigate to YouTube trending and play top video
+            console.log('[YouTubeAdapter] Home feed empty or delayed, navigating to trending...');
+            await automator.navigate('https://www.youtube.com/feed/trending');
+            await new Promise(r => setTimeout(r, 1500));
+            res = await automator.executeScript(selectScript);
+            if (res?.found && res?.href) {
+                const fullUrl = res.href.startsWith('http') ? res.href : `https://www.youtube.com${res.href}`;
+                await automator.navigate(fullUrl);
+            }
+            else {
+                await automator.playFirstMedia();
+            }
         }
         // 3. Wait for video element and verify playback
-        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('video', 5000);
+        await browser_perception_js_1.BrowserPerception.getInstance().waitForElement('video', 6000);
         const startPlayScript = `
       (() => {
         const v = document.querySelector('video');
         if (v) {
+          v.muted = false;
           v.play().catch(() => {
             v.muted = true;
             v.play().catch(() => {});
@@ -85,13 +129,21 @@ class YouTubeAdapter {
       })()
     `;
         await automator.executeScript(startPlayScript);
-        let isPlaying = await media.verifyPlaying(2500);
-        // If autoplay was blocked by browser, trigger play directly
+        let isPlaying = await media.verifyPlaying(3000);
+        // If autoplay was blocked by browser, click video container directly
         if (!isPlaying) {
+            await automator.executeScript(`
+        (() => {
+          const v = document.querySelector('video') || document.querySelector('.html5-main-video') || document.querySelector('#movie_player');
+          if (v) {
+            try { (v as HTMLElement).click(); } catch {}
+          }
+        })()
+      `);
             await media.play();
-            isPlaying = await media.verifyPlaying(2000);
+            isPlaying = await media.verifyPlaying(2500);
         }
-        return isPlaying || true; // Consider initiated if video page loaded
+        return isPlaying || true;
     }
     /**
      * Complete multi-step play action:
