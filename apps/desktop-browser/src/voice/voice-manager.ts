@@ -110,7 +110,7 @@ export class VoiceManager {
     this.wakeDetector = new WakeWordDetector({
       enabled: true,
       threshold: 0.88,
-      debounceMs: 2500,
+      debounceMs: 3500,
     });
     this.vad = new VoiceActivityDetector({
       trailingSilenceMs: 1400,
@@ -328,15 +328,9 @@ export class VoiceManager {
         break;
 
       case 'SPEAKING':
-        // Microphone audio during TTS is actively monitored for vocal barge-in.
-        // If user speaks loudly over TTS (RMS > 0.035), interrupt speech and task immediately.
-        if (rms >= 0.035) {
-          console.log(`[VoiceManager] Vocal barge-in detected (RMS: ${rms.toFixed(4)}) during SPEAKING! Interrupting speech...`);
-          if (typeof window !== 'undefined' && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-          }
-          this.triggerInterruption();
-        }
+        // During TTS speech output, ignore microphone audio to prevent acoustic laptop speaker feedback
+        // from falsely interrupting or cancelling active autonomous tasks.
+        // Task cancellation is strictly reserved for intentional user actions (Esc key, UI Stop, or "Stop" voice command).
         break;
 
       default:

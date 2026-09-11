@@ -31,10 +31,12 @@ class WakeWordDetector {
     peakUtteranceRms = 0;
     voicedFramesCount = 0;
     sibilantFramesCount = 0;
+    vocalicFramesCount = 0;
+    plosiveFramesCount = 0;
     onWakeCallback = null;
     constructor(config = {}) {
-        this.threshold = config.threshold ?? 0.65;
-        this.debounceMs = config.debounceMs ?? 2000;
+        this.threshold = config.threshold ?? 0.88;
+        this.debounceMs = config.debounceMs ?? 3500;
         this.isEnabled = config.enabled ?? true;
         this.preRollBuffer = new Float32Array(this.preRollSamples);
         if (config.onWake)
@@ -60,6 +62,8 @@ class WakeWordDetector {
         this.peakUtteranceRms = 0;
         this.voicedFramesCount = 0;
         this.sibilantFramesCount = 0;
+        this.vocalicFramesCount = 0;
+        this.plosiveFramesCount = 0;
     }
     onWakeDetected(cb) {
         this.onWakeCallback = cb;
@@ -89,8 +93,8 @@ class WakeWordDetector {
             highFreqEnergy += diff * diff;
         }
         const highFreqRatio = highFreqEnergy / (sumSq + 1e-6);
-        // Dynamic speech threshold: require intentional vocal level (at least 0.022 RMS)
-        const speechThreshold = Math.max(0.022, this.baselineRms * 2.5);
+        // Dynamic speech threshold: require intentional vocal level (at least 0.032 RMS)
+        const speechThreshold = Math.max(0.032, this.baselineRms * 2.8);
         if (!this.isTrackingUtterance) {
             // Smooth background noise floor during ambient silence
             if (rms < speechThreshold) {
@@ -102,7 +106,7 @@ class WakeWordDetector {
                 this.preRollIndex = (this.preRollIndex + 1) % this.preRollSamples;
             }
             // Detect speech onset for intentional wake word (requires robust initial vocal energy)
-            if (rms >= speechThreshold && zcr < 0.22) {
+            if (rms >= speechThreshold && zcr < 0.20) {
                 this.isTrackingUtterance = true;
                 this.silenceFramesCount = 0;
                 this.utteranceChunks = [];
@@ -112,6 +116,8 @@ class WakeWordDetector {
                 this.peakUtteranceRms = rms;
                 this.voicedFramesCount = 1;
                 this.sibilantFramesCount = 0;
+                this.vocalicFramesCount = 0;
+                this.plosiveFramesCount = 0;
                 // Linearize pre-roll buffer to preserve phrase start
                 const preRollLinear = new Float32Array(this.preRollSamples);
                 for (let i = 0; i < this.preRollSamples; i++) {
@@ -131,38 +137,44 @@ class WakeWordDetector {
                 this.peakUtteranceRms = rms;
             const elapsedMs = (this.totalUtteranceSamples / this.sampleRate) * 1000;
             // Track the 4 phonetic stages of "Hey" + "Tess" + "er" + "act"
-            // Stage 0: Voiced vowel onset "Hey" / "Hi" (requires at least 3 consecutive voiced frames)
+            // Stage 0: Voiced vowel onset "Hey" / "Hi" (requires at least 4 consecutive voiced frames)
             if (!this.phoneticStages[0] && elapsedMs < 600) {
-                if (rms >= speechThreshold * 1.15 && zcr < 0.22) {
+                if (rms >= speechThreshold * 1.2 && zcr < 0.20) {
                     this.voicedFramesCount++;
-                    if (this.voicedFramesCount >= 3) {
+                    if (this.voicedFramesCount >= 4) {
                         this.phoneticStages[0] = true;
                         this.stageTimings[0] = elapsedMs;
                     }
                 }
             }
-            // Stage 1: "Tess" (/t/ onset + /s/ dental sibilant: requires at least 3 consecutive high-freq frames)
-            if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 160 && elapsedMs < 1100) {
-                if (zcr >= 0.28 && highFreqRatio >= 0.28) {
+            // Stage 1: "Tess" (/t/ onset + /s/ dental sibilant: requires at least 5 consecutive high-freq frames)
+            if (this.phoneticStages[0] && !this.phoneticStages[1] && elapsedMs > 180 && elapsedMs < 1100) {
+                if (zcr >= 0.36 && highFreqRatio >= 0.36) {
                     this.sibilantFramesCount++;
-                    if (this.sibilantFramesCount >= 3) {
+                    if (this.sibilantFramesCount >= 5) {
                         this.phoneticStages[1] = true;
                         this.stageTimings[1] = elapsedMs;
                     }
                 }
             }
-            // Stage 2: "er" (Vocalic dip: lower ZCR < 0.26, voiced energy)
+            // Stage 2: "er" (Vocalic dip: lower ZCR < 0.22, voiced energy, at least 3 frames)
             if (this.phoneticStages[1] && !this.phoneticStages[2] && elapsedMs > 350 && elapsedMs < 1600) {
-                if (zcr < 0.26 && rms >= speechThreshold * 0.75) {
-                    this.phoneticStages[2] = true;
-                    this.stageTimings[2] = elapsedMs;
+                if (zcr < 0.22 && rms >= speechThreshold * 0.8) {
+                    this.vocalicFramesCount++;
+                    if (this.vocalicFramesCount >= 3) {
+                        this.phoneticStages[2] = true;
+                        this.stageTimings[2] = elapsedMs;
+                    }
                 }
             }
-            // Stage 3: "act" (/k/ + /t/ plosive release: transient burst)
+            // Stage 3: "act" (/k/ + /t/ plosive release: transient burst, at least 2 frames)
             if (this.phoneticStages[2] && !this.phoneticStages[3] && elapsedMs > 550 && elapsedMs < 2200) {
-                if (highFreqRatio > 0.23 || zcr > 0.25) {
-                    this.phoneticStages[3] = true;
-                    this.stageTimings[3] = elapsedMs;
+                if (highFreqRatio >= 0.30 || zcr >= 0.30) {
+                    this.plosiveFramesCount++;
+                    if (this.plosiveFramesCount >= 2) {
+                        this.phoneticStages[3] = true;
+                        this.stageTimings[3] = elapsedMs;
+                    }
                 }
             }
             // Check for trailing pause
@@ -184,14 +196,13 @@ class WakeWordDetector {
                 isSequential;
             const now = Date.now();
             const isDebounced = now - this.lastTriggerTime > this.debounceMs;
-            // Must have genuine trailing pause of at least 5 frames (~160ms) or one-shot command continuation
-            const hasTrailingPause = this.silenceFramesCount >= 5;
-            const isOneShotContinuation = allPhoneticsPassed && elapsedMs >= 1350 && this.silenceFramesCount < 3;
-            const hasRealVoiceEnergy = this.peakUtteranceRms >= 0.038;
-            if (isDebounced && isCandidateDuration && allPhoneticsPassed && (hasTrailingPause || isOneShotContinuation) && hasRealVoiceEnergy) {
+            // Must have genuine trailing pause of at least 4 frames (~130ms) to ensure wake phrase completed
+            const hasTrailingPause = this.silenceFramesCount >= 4;
+            const hasRealVoiceEnergy = this.peakUtteranceRms >= 0.052;
+            if (isDebounced && isCandidateDuration && allPhoneticsPassed && hasTrailingPause && hasRealVoiceEnergy) {
                 const fullAudio = this.flattenChunks();
                 this.lastTriggerTime = now;
-                console.log(`[Wake Word] Acoustic Wake Candidate Detected: "Hey Tesseract" (Duration: ${Math.round(elapsedMs)}ms, Peak RMS: ${this.peakUtteranceRms.toFixed(4)})`);
+                console.log(`[Wake Word] Acoustic Wake Candidate Confirmed: "Hey Tesseract" (Duration: ${Math.round(elapsedMs)}ms, Peak RMS: ${this.peakUtteranceRms.toFixed(4)})`);
                 if (this.onWakeCallback) {
                     this.onWakeCallback({
                         score: 0.95,
