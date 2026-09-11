@@ -211,7 +211,7 @@ Output strictly valid JSON matching this schema:
           decision = await this.model.structuredOutput<AgentDecision>(
             prompt,
             'AgentDecision JSON Schema',
-            { temperature: 0.1, maxTokens: 180, timeoutMs: 10000 }
+            { temperature: 0.1, maxTokens: 180, timeoutMs: 35000 }
           );
         } catch (err: any) {
           console.warn('[ActionLoop] LLM reasoning timed out or failed, activating Autonomous Perceptual Fallback:', err?.message);

@@ -4,7 +4,7 @@
  * Target-aware execution: WHAT, WHERE, ACTION with verified live browser state.
  */
 
-import { VoiceManager } from '../voice/voice-manager.js';
+import { VoiceManager, VoiceCommandPayload } from '../voice/voice-manager.js';
 import { CommandRouter, RoutedCommand } from './command-router.js';
 import { OllamaGemmaModel } from '../ai/ollama-gemma.js';
 import { ActionLoop } from './action-loop.js';
@@ -77,9 +77,12 @@ export class AgentRuntime {
     this.actionLoop = new ActionLoop(this.model, 8);
     this.tts = new WebSpeechTTSProvider();
 
+    // Pre-warm local Gemma 3 4B on startup to eliminate cold-start latency
+    this.model.prewarm().catch(() => {});
+
     // Bind voice command execution
-    this.voiceManager.onCommand(async (commandText: string) => {
-      await this.handleUserCommand(commandText);
+    this.voiceManager.onCommand(async (commandPayload: VoiceCommandPayload | string) => {
+      await this.handleUserCommand(commandPayload);
     });
 
     // Bind voice interruption
@@ -195,17 +198,19 @@ export class AgentRuntime {
    * Architecture: Voice/Text -> NLU Interpreter (Gemma 3 4B) -> Task Manager -> Dynamic Planner -> Action Loop.
    * Legacy greedy regex waterfall eliminated.
    */
-  public async handleUserCommand(rawCommand: string): Promise<void> {
-    const goal = rawCommand.trim();
+  public async handleUserCommand(commandInput: string | VoiceCommandPayload): Promise<void> {
+    const rawCommand = typeof commandInput === 'string' ? commandInput : commandInput.rawTranscript;
+    const normalizedCommand = typeof commandInput === 'string' ? commandInput : commandInput.normalizedTranscript;
+    const goal = (normalizedCommand || rawCommand || '').trim();
     if (!goal) {
       this.voiceManager.resetToWakeListening();
       return;
     }
 
     this.lastExecutedGoal = goal;
-    console.log(`[AgentRuntime] Received command: "${goal}"`);
+    console.log(`[AgentRuntime] Received command: normalized="${goal}", raw="${rawCommand}"`);
     const convManager = ConversationManager.getInstance();
-    convManager.recordTurn({ speaker: 'user', text: goal });
+    convManager.recordTurn({ speaker: 'user', text: goal, rawText: rawCommand });
 
     const cleanLower = goal.toLowerCase();
 

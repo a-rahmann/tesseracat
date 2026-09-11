@@ -386,10 +386,14 @@ class VoiceManager {
                 fullBuffer[i] = Math.max(-1.0, Math.min(1.0, fullBuffer[i] * boost));
             }
         }
+        const speechDurationMs = (fullBuffer.length / 16000) * 1000;
         this.transitionTo('TRANSCRIBING');
         try {
-            const transcription = await whisper_js_1.WhisperBridge.transcribe(fullBuffer);
-            console.log(`[VoiceManager] Transcribed: "${transcription}"`);
+            const t0 = Date.now();
+            const transcriptionRes = await whisper_js_1.WhisperBridge.transcribeDetailed(fullBuffer);
+            const transcription = transcriptionRes.text;
+            const sttLatencyMs = transcriptionRes.elapsedMs || (Date.now() - t0);
+            console.log(`[VoiceManager] Transcribed: "${transcription}" (latency: ${sttLatencyMs}ms, duration: ${Math.round(speechDurationMs)}ms)`);
             if (!transcription || transcription.trim().length === 0) {
                 console.warn('[VoiceManager] Whisper produced empty transcription for speech buffer.');
                 for (const listener of this.transcriptionListeners) {
@@ -401,9 +405,9 @@ class VoiceManager {
                 this.resetToWakeListening();
                 return;
             }
-            // Check for immediate voice interruption "Stop" / "Cancel"
+            // Check for immediate voice interruption "Stop" / "Cancel" / "Wait"
             const cleanLower = transcription.trim().toLowerCase();
-            if (cleanLower === 'stop' || cleanLower === 'cancel' || cleanLower === 'never mind') {
+            if (cleanLower === 'stop' || cleanLower === 'cancel' || cleanLower === 'never mind' || cleanLower === 'wait') {
                 this.triggerInterruption();
                 this.resetToWakeListening();
                 return;
@@ -419,7 +423,25 @@ class VoiceManager {
             if (grammarRes.wasModified) {
                 console.log(`[VoiceManager] Voice grammar auto-corrected: "${commandToProcess}" -> "${finalCommand}" (${grammarRes.explanation})`);
             }
-            this.transitionTo('THINKING', { transcription: finalCommand, rawTranscription: transcription });
+            const payload = {
+                rawTranscript: transcription,
+                normalizedTranscript: finalCommand,
+                audioDurationMs: speechDurationMs,
+                sttLatencyMs,
+                diagnostics: {
+                    rms: avgRms,
+                    speechDurationMs,
+                    sttLatencyMs,
+                    modelTier: transcriptionRes.model,
+                    grammarModified: grammarRes.wasModified,
+                    wasStandby: this.isStandbyMode,
+                },
+            };
+            this.transitionTo('THINKING', {
+                transcription: finalCommand,
+                rawTranscription: transcription,
+                diagnostics: payload.diagnostics,
+            });
             // Notify UI transcription listeners
             for (const listener of this.transcriptionListeners) {
                 try {
@@ -432,7 +454,7 @@ class VoiceManager {
             // Dispatch to command listeners (e.g. AgentRuntime)
             for (const listener of this.commandListeners) {
                 try {
-                    await listener(finalCommand);
+                    await listener(payload);
                 }
                 catch (err) {
                     console.error('[Command Listener Error]', err);

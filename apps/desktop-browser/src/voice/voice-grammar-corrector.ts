@@ -303,7 +303,7 @@ export class VoiceGrammarCorrector {
       // Audio / Video / Media
       { pattern: /\bloose\s+yourself\b/gi, replacement: 'lose yourself', reason: 'homophone:lose' },
       { pattern: /\bloose\s+my\b/gi, replacement: 'lose my', reason: 'homophone:lose' },
-      { pattern: /\b(?:the\s+ransom|a\s+ransom|ransom|randome)\s+(?:video|vide|clip)s?\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
+      { pattern: /\b(?:(?:a|the)\s+)?(?:ransom|randome)\s+(?:video|vide|clip)s?\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
       { pattern: /\b(?:see\s+you\s+around|around)\s+(?:the|a)?\s*(?:video|vide)s?\b/gi, replacement: 'a random video', reason: 'acoustic:random_video' },
       { pattern: /\b(?:there\s+are\s+no|we\s+are\s+on\s+the|they\s+are\s+on\s+the|where\s+are\s+the|clear\s+on\s+the|clear\s+random|player\s+a\s+random|player\s+random|player)\s+videos?\b/gi, replacement: 'play a random video', reason: 'acoustic:play_random_video' },
       { pattern: /\b(?:play\s+are|play\s+in|play\s+on|play\s+run\s+the)\s+random\s+videos?\b/gi, replacement: 'play a random video', reason: 'acoustic:play_random_video' },
@@ -393,6 +393,8 @@ export class VoiceGrammarCorrector {
     }
 
     text = correctedWords.join(' ').replace(/\s+/g, ' ').trim();
+    // Deduplicate accidental stuttered articles ('a a' -> 'a', 'the the' -> 'the')
+    text = text.replace(/\b(a|an|the)\s+\1\b/gi, '$1');
 
     const wasModified = text.toLowerCase() !== input.toLowerCase();
     const confidence = wasModified ? Math.max(0.85, 1.0 - changes.length * 0.05) : 1.0;

@@ -14,6 +14,21 @@
  */
 export type VoiceStateName = 'WAKE_LISTENING' | 'WAKE_DETECTED' | 'COMMAND_LISTENING' | 'TRANSCRIBING' | 'THINKING' | 'EXECUTING' | 'SPEAKING' | 'RESETTING';
 export type VoiceStatus = 'idle' | 'listening-for-wake' | 'wake-detected' | 'recording' | 'transcribing' | 'tts' | 'error';
+export interface VoiceDiagnostics {
+    rms: number;
+    speechDurationMs: number;
+    sttLatencyMs: number;
+    modelTier?: string;
+    grammarModified: boolean;
+    wasStandby: boolean;
+}
+export interface VoiceCommandPayload {
+    rawTranscript: string;
+    normalizedTranscript: string;
+    audioDurationMs: number;
+    sttLatencyMs: number;
+    diagnostics: VoiceDiagnostics;
+}
 export interface VoiceState {
     status: VoiceStatus;
     state: VoiceStateName;
@@ -21,10 +36,11 @@ export interface VoiceState {
     detail?: string;
     transcription?: string;
     rawTranscription?: string;
+    diagnostics?: Partial<VoiceDiagnostics>;
     error?: string;
 }
 export type VoiceStateListener = (state: VoiceState) => void;
-export type CommandListener = (commandText: string) => void | Promise<void>;
+export type CommandListener = (payload: VoiceCommandPayload | string) => void | Promise<void>;
 export type TranscriptionListener = (text: string) => void;
 export type InterruptionListener = () => void;
 export declare class VoiceManager {

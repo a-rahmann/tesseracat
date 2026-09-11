@@ -96,11 +96,34 @@ class OllamaGemmaModel {
         OllamaGemmaModel.requestQueue = nextCall;
         return nextCall;
     }
+    async prewarm() {
+        try {
+            console.log(`[OllamaGemmaModel] Pre-warming model ${this.name} with 60m keep-alive...`);
+            const resp = await fetch(`${this.baseUrl}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: this.name,
+                    prompt: '',
+                    keep_alive: '60m',
+                }),
+            });
+            if (resp.ok) {
+                console.log(`[OllamaGemmaModel] Model ${this.name} is pre-warmed and resident in memory.`);
+                return true;
+            }
+        }
+        catch (err) {
+            console.warn(`[OllamaGemmaModel] Pre-warm note:`, err?.message);
+        }
+        return false;
+    }
     async executeChat(messages, options = {}) {
         const payload = {
             model: this.name,
             messages,
             stream: false,
+            keep_alive: '60m',
             options: {
                 temperature: options.temperature ?? 0.2,
                 num_predict: options.maxTokens ?? 1024,
@@ -110,7 +133,8 @@ class OllamaGemmaModel {
         if (options.format || options.jsonSchema) {
             payload.format = options.format || options.jsonSchema;
         }
-        const timeoutMs = options.timeoutMs ?? 7000; // 7s default so local Ollama never hangs the user interface
+        // Realistic timeout based on hardware benchmarks: Gemma 3 4B takes ~22.9s warm on CPU
+        const timeoutMs = options.timeoutMs ?? 45000;
         const controller = new AbortController();
         let isTimedOut = false;
         const timeout = setTimeout(() => {
@@ -184,7 +208,7 @@ class OllamaGemmaModel {
             return responseText;
         }
         catch (err) {
-            const isAbort = isTimedOut || err?.name === 'AbortError';
+            const isAbort = isTimedOut || err?.name === 'AbortError' || (typeof DOMException !== 'undefined' && err instanceof DOMException);
             const diagnosticError = {
                 name: isAbort ? 'LlmTimeoutError' : (err?.name || 'Error'),
                 message: isAbort
@@ -214,7 +238,20 @@ DO NOT wrap in conversational preamble. Output ONLY the JSON block.`;
             format: options.format || 'json',
             systemPrompt: structuredSystem,
         });
-        return structured_output_js_1.StructuredOutputParser.parseJson(raw);
+        try {
+            return structured_output_js_1.StructuredOutputParser.parseJson(raw);
+        }
+        catch (parseErr) {
+            // Robust recovery: try regex extraction for embedded JSON block
+            const jsonMatch = raw.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+            if (jsonMatch) {
+                try {
+                    return JSON.parse(jsonMatch[1]);
+                }
+                catch (_) { }
+            }
+            throw parseErr;
+        }
     }
 }
 exports.OllamaGemmaModel = OllamaGemmaModel;

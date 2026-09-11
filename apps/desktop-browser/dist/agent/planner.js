@@ -84,7 +84,7 @@ Output strictly valid JSON matching this schema:
   }
 ]`;
         try {
-            const steps = await this.model.structuredOutput(prompt, 'Array<PlanStep>', { temperature: 0.1, maxTokens: 250 });
+            const steps = await this.model.structuredOutput(prompt, 'Array<PlanStep>', { temperature: 0.1, maxTokens: 250, timeoutMs: 35000 });
             const normalizedSteps = (steps || []).map((s, idx) => ({
                 stepNumber: s.stepNumber || idx + 1,
                 description: s.description || `Step ${idx + 1}`,
@@ -138,7 +138,7 @@ ${context.availableTools.join(', ')}
 
 Output strictly valid JSON array of recovery PlanStep objects.`;
         try {
-            const newSteps = await this.model.structuredOutput(prompt, 'Array<PlanStep>', { temperature: 0.2, maxTokens: 500 });
+            const newSteps = await this.model.structuredOutput(prompt, 'Array<PlanStep>', { temperature: 0.2, maxTokens: 500, timeoutMs: 35000 });
             return newSteps.map((s, idx) => ({
                 stepNumber: failedStep.stepNumber + idx,
                 description: s.description,

@@ -7,6 +7,7 @@ export interface ConversationTurn {
   timestamp: number;
   speaker: 'user' | 'assistant' | 'system';
   text: string;
+  rawText?: string;
   intent?: string;
   entities?: Record<string, any>;
   browserUrl?: string;

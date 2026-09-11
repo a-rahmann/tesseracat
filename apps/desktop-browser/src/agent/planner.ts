@@ -103,7 +103,7 @@ Output strictly valid JSON matching this schema:
       const steps = await this.model.structuredOutput<PlanStep[]>(
         prompt,
         'Array<PlanStep>',
-        { temperature: 0.1, maxTokens: 250 }
+        { temperature: 0.1, maxTokens: 250, timeoutMs: 35000 }
       );
 
       const normalizedSteps: PlanStep[] = (steps || []).map((s, idx) => ({
@@ -170,7 +170,7 @@ Output strictly valid JSON array of recovery PlanStep objects.`;
       const newSteps = await this.model.structuredOutput<PlanStep[]>(
         prompt,
         'Array<PlanStep>',
-        { temperature: 0.2, maxTokens: 500 }
+        { temperature: 0.2, maxTokens: 500, timeoutMs: 35000 }
       );
       return newSteps.map((s, idx) => ({
         stepNumber: failedStep.stepNumber + idx,

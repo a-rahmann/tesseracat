@@ -59,6 +59,15 @@ async function getTranscriber(tier = 'tiny.en') {
         const start = Date.now();
         transcriber = await (0, transformers_1.pipeline)('automatic-speech-recognition', modelName);
         console.log(`[AISidecar] Whisper ${tier} initialized successfully in ${Date.now() - start}ms.`);
+        // Pre-warm ONNX graph with dummy audio so first real user command has zero warmup penalty
+        try {
+            const dummyAudio = new Float32Array(8000); // 0.5s silence
+            await transcriber(dummyAudio, { return_timestamps: false, chunk_length_s: 5 });
+            console.log(`[AISidecar] Whisper ${tier} ONNX execution provider pre-warmed successfully.`);
+        }
+        catch (warmErr) {
+            console.warn('[AISidecar] Whisper pre-warm dummy run note:', warmErr.message);
+        }
     }
     catch (err) {
         console.error(`[AISidecar] Failed to load Whisper model ${modelName}:`, err.message);
@@ -195,6 +204,20 @@ if (process.send) {
                 idleMs: Date.now() - lastActivityTimestamp,
                 memoryUsage: process.memoryUsage(),
             });
+            return;
+        }
+        if (type === 'SET_TIER') {
+            const targetTier = payload?.tier;
+            if (targetTier === 'tiny.en' || targetTier === 'base.en' || targetTier === 'small.en') {
+                getTranscriber(targetTier).then(() => {
+                    process.send({ id, type: 'SET_TIER_RESULT', success: true, tier: targetTier });
+                }).catch((err) => {
+                    process.send({ id, type: 'SET_TIER_RESULT', success: false, error: err.message });
+                });
+            }
+            else {
+                process.send({ id, type: 'SET_TIER_RESULT', success: false, error: 'Invalid model tier' });
+            }
             return;
         }
         if (type === 'TRANSCRIBE') {

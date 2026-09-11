@@ -163,7 +163,7 @@ Output strictly valid JSON matching this schema:
   "confidence": number
 }`;
                 try {
-                    decision = await this.model.structuredOutput(prompt, 'AgentDecision JSON Schema', { temperature: 0.1, maxTokens: 180, timeoutMs: 10000 });
+                    decision = await this.model.structuredOutput(prompt, 'AgentDecision JSON Schema', { temperature: 0.1, maxTokens: 180, timeoutMs: 35000 });
                 }
                 catch (err) {
                     console.warn('[ActionLoop] LLM reasoning timed out or failed, activating Autonomous Perceptual Fallback:', err?.message);

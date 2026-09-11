@@ -169,7 +169,7 @@ Output strictly valid JSON matching this schema:
   "confidence": number
 }`;
         try {
-            const decision = await this.model.structuredOutput(prompt, 'AgentGoal JSON Schema', { temperature: 0.1, maxTokens: 280, timeoutMs: 5000 });
+            const decision = await this.model.structuredOutput(prompt, 'AgentGoal JSON Schema', { temperature: 0.1, maxTokens: 280, timeoutMs: 35000 });
             const isCoherent = decision.isCoherent !== false && (decision.confidence ?? 0.85) >= 0.6;
             const initialPlan = Array.isArray(decision.initialPlan) && decision.initialPlan.length > 0
                 ? decision.initialPlan.map((s, idx) => ({

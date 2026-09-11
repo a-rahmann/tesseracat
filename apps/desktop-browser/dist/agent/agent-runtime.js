@@ -49,9 +49,11 @@ class AgentRuntime {
         this.model = new ollama_gemma_js_1.OllamaGemmaModel('gemma3:4b');
         this.actionLoop = new action_loop_js_1.ActionLoop(this.model, 8);
         this.tts = new tts_provider_js_1.WebSpeechTTSProvider();
+        // Pre-warm local Gemma 3 4B on startup to eliminate cold-start latency
+        this.model.prewarm().catch(() => { });
         // Bind voice command execution
-        this.voiceManager.onCommand(async (commandText) => {
-            await this.handleUserCommand(commandText);
+        this.voiceManager.onCommand(async (commandPayload) => {
+            await this.handleUserCommand(commandPayload);
         });
         // Bind voice interruption
         this.voiceManager.onInterruption(() => {
@@ -155,16 +157,18 @@ class AgentRuntime {
      * Architecture: Voice/Text -> NLU Interpreter (Gemma 3 4B) -> Task Manager -> Dynamic Planner -> Action Loop.
      * Legacy greedy regex waterfall eliminated.
      */
-    async handleUserCommand(rawCommand) {
-        const goal = rawCommand.trim();
+    async handleUserCommand(commandInput) {
+        const rawCommand = typeof commandInput === 'string' ? commandInput : commandInput.rawTranscript;
+        const normalizedCommand = typeof commandInput === 'string' ? commandInput : commandInput.normalizedTranscript;
+        const goal = (normalizedCommand || rawCommand || '').trim();
         if (!goal) {
             this.voiceManager.resetToWakeListening();
             return;
         }
         this.lastExecutedGoal = goal;
-        console.log(`[AgentRuntime] Received command: "${goal}"`);
+        console.log(`[AgentRuntime] Received command: normalized="${goal}", raw="${rawCommand}"`);
         const convManager = conversation_manager_js_1.ConversationManager.getInstance();
-        convManager.recordTurn({ speaker: 'user', text: goal });
+        convManager.recordTurn({ speaker: 'user', text: goal, rawText: rawCommand });
         const cleanLower = goal.toLowerCase();
         // 0a. Voice Interruption: "Stop", "Wait", "Actually don't do that", "Cancel"
         if (/^(?:stop|wait|cancel|abort|pause\s+task|actually\s+(?:don't|stop)|never\s*mind)\b/i.test(cleanLower)) {

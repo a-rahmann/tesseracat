@@ -195,7 +195,7 @@ Output strictly valid JSON matching this schema:
       const decision = await this.model.structuredOutput<any>(
         prompt,
         'AgentGoal JSON Schema',
-        { temperature: 0.1, maxTokens: 280, timeoutMs: 5000 }
+        { temperature: 0.1, maxTokens: 280, timeoutMs: 35000 }
       );
 
       const isCoherent = decision.isCoherent !== false && (decision.confidence ?? 0.85) >= 0.6;

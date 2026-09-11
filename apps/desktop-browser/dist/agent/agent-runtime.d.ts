@@ -3,6 +3,7 @@
  * Invariant: ACTION != SEARCH. Never default to Google search.
  * Target-aware execution: WHAT, WHERE, ACTION with verified live browser state.
  */
+import { VoiceCommandPayload } from '../voice/voice-manager.js';
 export interface AgentTaskState {
     status: 'idle' | 'thinking' | 'planning' | 'executing' | 'speaking' | 'success' | 'error';
     goal?: string;
@@ -58,7 +59,7 @@ export declare class AgentRuntime {
      * Architecture: Voice/Text -> NLU Interpreter (Gemma 3 4B) -> Task Manager -> Dynamic Planner -> Action Loop.
      * Legacy greedy regex waterfall eliminated.
      */
-    handleUserCommand(rawCommand: string): Promise<void>;
+    handleUserCommand(commandInput: string | VoiceCommandPayload): Promise<void>;
     /**
      * Autonomous Mission Execution Engine
      */

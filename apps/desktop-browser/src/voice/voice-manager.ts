@@ -39,6 +39,23 @@ export type VoiceStatus =
   | 'tts'
   | 'error';
 
+export interface VoiceDiagnostics {
+  rms: number;
+  speechDurationMs: number;
+  sttLatencyMs: number;
+  modelTier?: string;
+  grammarModified: boolean;
+  wasStandby: boolean;
+}
+
+export interface VoiceCommandPayload {
+  rawTranscript: string;
+  normalizedTranscript: string;
+  audioDurationMs: number;
+  sttLatencyMs: number;
+  diagnostics: VoiceDiagnostics;
+}
+
 export interface VoiceState {
   status: VoiceStatus;
   state: VoiceStateName;
@@ -46,11 +63,12 @@ export interface VoiceState {
   detail?: string;
   transcription?: string;
   rawTranscription?: string;
+  diagnostics?: Partial<VoiceDiagnostics>;
   error?: string;
 }
 
 export type VoiceStateListener = (state: VoiceState) => void;
-export type CommandListener = (commandText: string) => void | Promise<void>;
+export type CommandListener = (payload: VoiceCommandPayload | string) => void | Promise<void>;
 export type TranscriptionListener = (text: string) => void;
 export type InterruptionListener = () => void;
 
@@ -461,11 +479,15 @@ export class VoiceManager {
       }
     }
 
+    const speechDurationMs = (fullBuffer.length / 16000) * 1000;
     this.transitionTo('TRANSCRIBING');
 
     try {
-      const transcription = await WhisperBridge.transcribe(fullBuffer);
-      console.log(`[VoiceManager] Transcribed: "${transcription}"`);
+      const t0 = Date.now();
+      const transcriptionRes = await WhisperBridge.transcribeDetailed(fullBuffer);
+      const transcription = transcriptionRes.text;
+      const sttLatencyMs = transcriptionRes.elapsedMs || (Date.now() - t0);
+      console.log(`[VoiceManager] Transcribed: "${transcription}" (latency: ${sttLatencyMs}ms, duration: ${Math.round(speechDurationMs)}ms)`);
 
       if (!transcription || transcription.trim().length === 0) {
         console.warn('[VoiceManager] Whisper produced empty transcription for speech buffer.');
@@ -478,9 +500,9 @@ export class VoiceManager {
         return;
       }
 
-      // Check for immediate voice interruption "Stop" / "Cancel"
+      // Check for immediate voice interruption "Stop" / "Cancel" / "Wait"
       const cleanLower = transcription.trim().toLowerCase();
-      if (cleanLower === 'stop' || cleanLower === 'cancel' || cleanLower === 'never mind') {
+      if (cleanLower === 'stop' || cleanLower === 'cancel' || cleanLower === 'never mind' || cleanLower === 'wait') {
         this.triggerInterruption();
         this.resetToWakeListening();
         return;
@@ -499,7 +521,26 @@ export class VoiceManager {
         console.log(`[VoiceManager] Voice grammar auto-corrected: "${commandToProcess}" -> "${finalCommand}" (${grammarRes.explanation})`);
       }
 
-      this.transitionTo('THINKING', { transcription: finalCommand, rawTranscription: transcription });
+      const payload: VoiceCommandPayload = {
+        rawTranscript: transcription,
+        normalizedTranscript: finalCommand,
+        audioDurationMs: speechDurationMs,
+        sttLatencyMs,
+        diagnostics: {
+          rms: avgRms,
+          speechDurationMs,
+          sttLatencyMs,
+          modelTier: transcriptionRes.model,
+          grammarModified: grammarRes.wasModified,
+          wasStandby: this.isStandbyMode,
+        },
+      };
+
+      this.transitionTo('THINKING', {
+        transcription: finalCommand,
+        rawTranscription: transcription,
+        diagnostics: payload.diagnostics,
+      });
 
       // Notify UI transcription listeners
       for (const listener of this.transcriptionListeners) {
@@ -513,7 +554,7 @@ export class VoiceManager {
       // Dispatch to command listeners (e.g. AgentRuntime)
       for (const listener of this.commandListeners) {
         try {
-          await listener(finalCommand);
+          await listener(payload);
         } catch (err) {
           console.error('[Command Listener Error]', err);
         }

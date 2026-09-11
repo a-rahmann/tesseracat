@@ -12,6 +12,7 @@ export declare class OllamaGemmaModel implements AgentModel {
     generate(prompt: string, options?: ModelGenerateOptions): Promise<string>;
     stream(prompt: string, callbacks: ModelStreamCallbacks, options?: ModelGenerateOptions): Promise<string>;
     chat(messages: ChatMessage[], options?: ModelGenerateOptions): Promise<string>;
+    prewarm(): Promise<boolean>;
     private executeChat;
     structuredOutput<T = any>(prompt: string, schemaDescription: string, options?: ModelGenerateOptions): Promise<T>;
 }
