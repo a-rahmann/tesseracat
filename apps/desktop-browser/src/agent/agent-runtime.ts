@@ -32,6 +32,10 @@ import { PerformanceProfiler } from './performance-profiler.js';
 import { LearnedRulesStore } from '../memory/learned-rules-store.js';
 import { TaskMacroCache } from '../memory/task-macro-cache.js';
 import { VoiceGrammarCorrector } from '../voice/voice-grammar-corrector.js';
+import { CapabilityRouter } from './capability-router.js';
+import { GoalGraph } from './goal-graph.js';
+import { ConnectorRegistry } from '../services/connectors/service-connector.js';
+import { YouTubeTools } from '../services/connectors/youtube-tools.js';
 
 export interface AgentTaskState {
   status: 'idle' | 'thinking' | 'planning' | 'executing' | 'speaking' | 'success' | 'error';
@@ -500,6 +504,99 @@ export class AgentRuntime {
       return this.executeAutonomousMission(fastPathGoal.goal, fastPathGoal.initialPlan);
     }
 
+    // 0i. Tier 2: Native Service Connector & GoalGraph Router
+    const capabilityRoute = CapabilityRouter.getInstance().route(goal);
+    if (capabilityRoute.tier === 'NATIVE_SERVICE_CONNECTOR' && capabilityRoute.targetTool) {
+      console.log(`[AgentRuntime] CapabilityRouter matched native tool: ${capabilityRoute.targetTool} (${capabilityRoute.reason})`);
+      profiler.markPlanning();
+
+      if (capabilityRoute.targetTool === 'youtube.play') {
+        this.updateState({ status: 'executing', currentAction: 'Executing verified YouTube playback goal graph...', progress: 0.2 });
+        const playGraph = GoalGraph.createYouTubePlayGraph({
+          query: capabilityRoute.parameters?.query,
+          isRandom: capabilityRoute.parameters?.isRandom,
+          automator: BrowserAutomator.getInstance(),
+          adapter: YouTubeAdapter,
+          media: MediaController.getInstance(),
+        });
+
+        playGraph.setOnNodeStateChange((node) => {
+          this.updateState({
+            currentAction: `${node.description} [${node.status}]`,
+            progress: Math.max(0.2, playGraph.getProgress()),
+          });
+        });
+
+        const graphResult = await playGraph.execute();
+        if (graphResult.success) {
+          const spoken = capabilityRoute.parameters?.query
+            ? `Playing ${capabilityRoute.parameters.query} on YouTube.`
+            : 'Playing a video on YouTube.';
+          await this.speak(spoken);
+          this.updateState({ status: 'success', currentAction: 'Playing video', progress: 1.0 });
+        } else {
+          await this.speak('I opened YouTube, but could not verify that video playback started.');
+          this.updateState({ status: 'error', currentAction: graphResult.error || 'Playback verification failed', progress: 1.0 });
+        }
+        profiler.markComplete(graphResult.success);
+        this.voiceManager.resetToWakeListening();
+        return;
+      }
+
+      // Native Google Workspace Tools (Gmail, Calendar, Drive)
+      try {
+        this.updateState({ status: 'executing', currentAction: `Executing ${capabilityRoute.targetTool}...`, progress: 0.5 });
+        const result = await ConnectorRegistry.getInstance().executeServiceTool(
+          capabilityRoute.targetTool,
+          capabilityRoute.parameters || {}
+        );
+
+        let spokenResponse = 'Done.';
+        if (capabilityRoute.targetTool === 'calendar.today') {
+          if (Array.isArray(result) && result.length > 0) {
+            spokenResponse = `You have ${result.length} event${result.length > 1 ? 's' : ''} today: ` +
+              result.slice(0, 3).map((e: any) => `${e.summary} at ${new Date(e.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`).join(', ');
+          } else {
+            spokenResponse = 'You have no scheduled meetings today.';
+          }
+        } else if (capabilityRoute.targetTool === 'calendar.upcoming') {
+          if (Array.isArray(result) && result.length > 0) {
+            spokenResponse = `You have ${result.length} upcoming events. Next is ${result[0].summary}.`;
+          } else {
+            spokenResponse = 'You have no upcoming events in the next few days.';
+          }
+        } else if (capabilityRoute.targetTool === 'gmail.search') {
+          if (Array.isArray(result) && result.length > 0) {
+            spokenResponse = `Found ${result.length} email${result.length > 1 ? 's' : ''}. Latest from ${result[0].from || 'sender'}: "${result[0].subject}".`;
+          } else {
+            spokenResponse = 'No matching emails found.';
+          }
+        } else if (capabilityRoute.targetTool === 'drive.search') {
+          if (Array.isArray(result) && result.length > 0) {
+            spokenResponse = `Found ${result.length} file${result.length > 1 ? 's' : ''} in Google Drive: ` +
+              result.slice(0, 3).map((f: any) => f.name).join(', ');
+          } else {
+            spokenResponse = 'No matching files found in Google Drive.';
+          }
+        }
+
+        await this.speak(spokenResponse);
+        this.updateState({ status: 'success', currentAction: spokenResponse, progress: 1.0 });
+        profiler.markComplete(true);
+      } catch (err: any) {
+        console.warn('[AgentRuntime] Native connector execution error:', err.message);
+        if (err.message.includes('not authenticated') || err.message.includes('not connected')) {
+          await this.speak("Google Workspace is not connected yet. Please connect your Google account in Settings.");
+        } else {
+          await this.speak(`Service action issue: ${err.message}`);
+        }
+        this.updateState({ status: 'error', currentAction: err.message, progress: 1.0 });
+        profiler.markComplete(false);
+      }
+      this.voiceManager.resetToWakeListening();
+      return;
+    }
+
     // Begin Recording Task
     TaskRecorder.getInstance().startTask(goal);
     this.currentCancellationToken = new CancellationToken();
@@ -889,28 +986,29 @@ Give a concise 2-sentence spoken response answering their question based on actu
 
     if (cmd.location === 'youtube' && cmd.query) {
       const isRandomOrGeneric = /^(?:a\s+)?(?:random|specific)?\s*(?:video|vide)?$/i.test(cmd.query);
-      if (isRandomOrGeneric) {
-        this.updateState({ status: 'executing', currentAction: 'Opening YouTube and playing a video...', progress: 0.4 });
-        await automator.navigate('https://www.youtube.com');
-        const played = await YouTubeAdapter.playResult(Math.floor(Math.random() * 3) + 1);
-        if (played) {
-          this.updateState({ status: 'success', currentAction: 'Playing video', progress: 1.0 });
-          await this.speak('Playing a video on YouTube.');
-        } else {
-          this.updateState({ status: 'error', currentAction: 'Could not start video playback', progress: 1.0 });
-          await this.speak('Opened YouTube, but could not start playback.');
-        }
-        return;
-      }
+      const playGraph = GoalGraph.createYouTubePlayGraph({
+        query: isRandomOrGeneric ? undefined : cmd.query,
+        isRandom: isRandomOrGeneric,
+        index: cmd.index || 1,
+        automator,
+        adapter: YouTubeAdapter,
+        media,
+      });
 
-      this.updateState({ status: 'executing', currentAction: `Searching YouTube for "${cmd.query}"...`, progress: 0.4 });
-      const res = await YouTubeAdapter.searchAndPlay(cmd.query, cmd.index || 1);
-      if (res.success) {
-        this.updateState({ status: 'success', currentAction: `Playing "${res.title || cmd.query}"`, progress: 1.0 });
-        await this.speak(`Playing "${res.title || cmd.query}" on YouTube.`);
+      playGraph.setOnNodeStateChange((node) => {
+        this.updateState({
+          currentAction: `${node.description} [${node.status}]`,
+          progress: Math.max(0.3, playGraph.getProgress()),
+        });
+      });
+
+      const graphResult = await playGraph.execute();
+      if (graphResult.success) {
+        this.updateState({ status: 'success', currentAction: 'Playing video', progress: 1.0 });
+        await this.speak(isRandomOrGeneric ? 'Playing a video on YouTube.' : `Playing "${cmd.query}" on YouTube.`);
       } else {
-        this.updateState({ status: 'error', currentAction: 'Playback verification failed', progress: 1.0 });
-        await this.speak(`I found ${cmd.query} on YouTube, but video playback could not be verified.`);
+        this.updateState({ status: 'error', currentAction: graphResult.error || 'Could not verify playback', progress: 1.0 });
+        await this.speak('Opened YouTube, but video playback could not be verified.');
       }
       return;
     }

@@ -10,6 +10,8 @@ import { MemoryRetriever } from '../memory/memory-retriever.js';
 import { PDFReader } from '../browser/pdf-reader.js';
 import { ComparisonEngine } from '../skills/comparison-engine.js';
 import { CancellationToken } from './cancellation.js';
+import { initializeConnectors, ConnectorRegistry } from '../services/connectors/index.js';
+import { YouTubeTools } from '../services/connectors/youtube-tools.js';
 
 export type ActionSafetyCategory =
   | 'READ'
@@ -498,6 +500,167 @@ export class ToolRegistry {
         properties: { query: { type: 'string' }, minutesAgo: { type: 'number' } },
       },
       execute: async (args) => MemoryRetriever.search(args),
+    });
+
+    // 9. Tier 1 Native Service Connectors (Google Workspace & YouTube)
+    initializeConnectors();
+    const connectorRegistry = ConnectorRegistry.getInstance();
+
+    // Gmail tools
+    this.registerTool({
+      name: 'gmail.search',
+      category: 'READ',
+      description: 'Search emails via Google Gmail REST API',
+      parametersSchema: { type: 'object', properties: { query: { type: 'string' }, maxResults: { type: 'number' } } },
+      execute: async (args) => connectorRegistry.executeServiceTool('gmail.search', args),
+    });
+
+    this.registerTool({
+      name: 'gmail.getMessage',
+      category: 'READ',
+      description: 'Fetch detailed email message by ID',
+      parametersSchema: { type: 'object', properties: { messageId: { type: 'string' } }, required: ['messageId'] },
+      execute: async (args) => connectorRegistry.executeServiceTool('gmail.getMessage', args),
+    });
+
+    this.registerTool({
+      name: 'gmail.listThreads',
+      category: 'READ',
+      description: 'List recent email conversation threads',
+      parametersSchema: { type: 'object', properties: { maxResults: { type: 'number' } } },
+      execute: async (args) => connectorRegistry.executeServiceTool('gmail.listThreads', args),
+    });
+
+    this.registerTool({
+      name: 'gmail.createDraft',
+      category: 'LOW_RISK_ACTION',
+      description: 'Create an email draft in Gmail without sending',
+      parametersSchema: {
+        type: 'object',
+        properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+        required: ['to', 'subject', 'body'],
+      },
+      execute: async (args) => connectorRegistry.executeServiceTool('gmail.createDraft', args),
+    });
+
+    this.registerTool({
+      name: 'gmail.send',
+      category: 'EXTERNAL_COMMUNICATION',
+      description: 'Send an email message via Gmail (Requires explicit confirmation)',
+      parametersSchema: {
+        type: 'object',
+        properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, confirmed: { type: 'boolean' } },
+        required: ['to', 'subject', 'body'],
+      },
+      execute: async (args) => connectorRegistry.executeServiceTool('gmail.send', args),
+    });
+
+    // Google Calendar tools
+    this.registerTool({
+      name: 'calendar.today',
+      category: 'READ',
+      description: "Get all schedule events for today from Google Calendar",
+      parametersSchema: { type: 'object', properties: {} },
+      execute: async (args) => connectorRegistry.executeServiceTool('calendar.today', args),
+    });
+
+    this.registerTool({
+      name: 'calendar.upcoming',
+      category: 'READ',
+      description: 'Get upcoming schedule events for the next N days',
+      parametersSchema: { type: 'object', properties: { days: { type: 'number' } } },
+      execute: async (args) => connectorRegistry.executeServiceTool('calendar.upcoming', args),
+    });
+
+    this.registerTool({
+      name: 'calendar.search',
+      category: 'READ',
+      description: 'Search calendar events by keyword, participant or date',
+      parametersSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+      execute: async (args) => connectorRegistry.executeServiceTool('calendar.search', args),
+    });
+
+    this.registerTool({
+      name: 'calendar.createEvent',
+      category: 'LOW_RISK_ACTION',
+      description: 'Create a new Google Calendar event',
+      parametersSchema: {
+        type: 'object',
+        properties: {
+          summary: { type: 'string' },
+          start: { type: 'string' },
+          end: { type: 'string' },
+          description: { type: 'string' },
+          confirmed: { type: 'boolean' },
+        },
+        required: ['summary', 'start', 'end'],
+      },
+      execute: async (args) => connectorRegistry.executeServiceTool('calendar.createEvent', args),
+    });
+
+    this.registerTool({
+      name: 'calendar.deleteEvent',
+      category: 'DESTRUCTIVE',
+      description: 'Delete a Google Calendar event (Requires confirmation)',
+      parametersSchema: {
+        type: 'object',
+        properties: { eventId: { type: 'string' }, confirmed: { type: 'boolean' } },
+        required: ['eventId'],
+      },
+      execute: async (args) => connectorRegistry.executeServiceTool('calendar.deleteEvent', args),
+    });
+
+    // Google Drive tools
+    this.registerTool({
+      name: 'drive.search',
+      category: 'READ',
+      description: 'Search files and documents in Google Drive',
+      parametersSchema: { type: 'object', properties: { query: { type: 'string' } } },
+      execute: async (args) => connectorRegistry.executeServiceTool('drive.search', args),
+    });
+
+    this.registerTool({
+      name: 'drive.getFile',
+      category: 'READ',
+      description: 'Get Google Drive file metadata and links',
+      parametersSchema: { type: 'object', properties: { fileId: { type: 'string' } }, required: ['fileId'] },
+      execute: async (args) => connectorRegistry.executeServiceTool('drive.getFile', args),
+    });
+
+    this.registerTool({
+      name: 'drive.upload',
+      category: 'LOW_RISK_ACTION',
+      description: 'Upload content to Google Drive',
+      parametersSchema: {
+        type: 'object',
+        properties: { name: { type: 'string' }, content: { type: 'string' }, mimeType: { type: 'string' } },
+        required: ['name', 'content'],
+      },
+      execute: async (args) => connectorRegistry.executeServiceTool('drive.upload', args),
+    });
+
+    this.registerTool({
+      name: 'drive.delete',
+      category: 'DESTRUCTIVE',
+      description: 'Delete file from Google Drive (Requires confirmation)',
+      parametersSchema: {
+        type: 'object',
+        properties: { fileId: { type: 'string' }, confirmed: { type: 'boolean' } },
+        required: ['fileId'],
+      },
+      execute: async (args) => connectorRegistry.executeServiceTool('drive.delete', args),
+    });
+
+    // YouTube playback tool with verification
+    this.registerTool({
+      name: 'youtube.play',
+      category: 'LOW_RISK_ACTION',
+      description: 'Navigate to video and verify actual media playback',
+      parametersSchema: {
+        type: 'object',
+        properties: { query: { type: 'string' }, videoId: { type: 'string' }, index: { type: 'number' }, isRandom: { type: 'boolean' } },
+      },
+      execute: async (args) => YouTubeTools.play(args),
     });
   }
 }

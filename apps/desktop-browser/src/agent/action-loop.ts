@@ -15,6 +15,7 @@ import { AgentModel } from '../ai/model.js';
 import { ToolRegistry, AgentTool } from './tool-registry.js';
 import { BrowserPerception } from '../browser/browser-perception.js';
 import { BrowserAutomator } from '../browser/browser-automator.js';
+import { MediaController } from '../browser/media-controller.js';
 import { CancellationToken } from './cancellation.js';
 import { ConversationManager } from '../memory/conversation-manager.js';
 import { TaskManager, ActiveTask } from './task-manager.js';
@@ -362,6 +363,14 @@ Output strictly valid JSON matching this schema:
 
         // If this was the final pre-planned step, finish mission now AFTER executing it!
         if (decision.isFinalStep) {
+          const lowerGoal = goal.toLowerCase();
+          const requiresPlayback = lowerGoal.includes('play') && (lowerGoal.includes('video') || lowerGoal.includes('youtube') || lowerGoal.includes('song'));
+          if (requiresPlayback) {
+            const isPlaying = await MediaController.getInstance().verifyPlaying(3000);
+            if (!isPlaying) {
+              throw new Error('Goal completion contract violated: Video playback requested but media is not actively playing.');
+            }
+          }
           const summary = decision.reason || (decision as any).thought || `Completed mission: ${goal}`;
           callbacks.onStep(stepNumber, summary, 'SUCCESS');
           taskManager.transitionState('COMPLETED', { currentActionDescription: summary });
@@ -430,10 +439,10 @@ Output strictly valid JSON matching this schema:
       await new Promise(r => setTimeout(r, 400));
     }
 
-    const summary = 'Reached maximum planned execution steps.';
-    callbacks.onFinish(summary);
-    taskManager.transitionState('COMPLETED', { currentActionDescription: summary });
-    return { success: true, summary };
+    const summary = 'Reached maximum planned execution steps without explicit goal completion verification.';
+    callbacks.onError(summary);
+    taskManager.transitionState('FAILED', { error: summary });
+    return { success: false, summary };
   }
 
   /**
@@ -563,6 +572,11 @@ Output strictly valid JSON matching this schema:
     } else if (toolName === 'browser.click') {
       // Brief DOM stabilization pause
       await new Promise(r => setTimeout(r, 350));
+    } else if (toolName.startsWith('youtube.play')) {
+      const isPlaying = await MediaController.getInstance().verifyPlaying(3500);
+      if (!isPlaying) {
+        throw new Error('Video playback could not be verified after play action');
+      }
     }
   }
 
