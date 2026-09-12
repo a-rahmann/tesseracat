@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OFFLINE DOOM // Agentic Browser</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container" class="crt-active">
+        <!-- 3D Raycasting Canvas -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Optional CRT Scanline & Vignette Effect Overlay -->
+        <div id="crt-overlay"></div>
+
+        <!-- Valorant-Style Pointer Lock 360 Aim Prompt -->
+        <div id="pointer-lock-prompt">
+            <span class="lock-icon">&oplus;</span> CLICK SCREEN TO LOCK AIM (360&deg; MOUSE LOOK)
+        </div>
+
+        <!-- Dynamic UI Screens Overlay -->
+        <div id="ui-overlay">
+            
+            <!-- 1. MAIN MENU SCREEN -->
+            <div id="screen-main-menu" class="ui-screen active">
+                <div class="menu-content">
+                    <div class="header-badge">AGENTIC BROWSER // OFFLINE SYSTEM</div>
+                    <h1 class="game-title">OFFLINE DOOM</h1>
+                    <div class="game-subtitle">DEMONIC CONTAINMENT PROTOCOL</div>
+
+                    <div class="menu-buttons">
+                        <button id="btn-play" class="btn-retro btn-primary" onclick="window.game && window.game.startNewGame()">ENTER FACILITY [PLAY]</button>
+                        <button id="btn-how-to-play" class="btn-retro" onclick="window.mainUI && window.mainUI.showScreen('how-to-play')">HOW TO PLAY</button>
+                        <button id="btn-settings" class="btn-retro" onclick="window.mainUI && window.mainUI.openSettings('main-menu')">SETTINGS</button>
+                        <button id="btn-credits" class="btn-retro" onclick="window.mainUI && window.mainUI.showScreen('credits')">SYSTEM INFO</button>
+                        <button id="btn-return-browser" class="btn-retro btn-return-browser" onclick="if(window.parent && window.parent.exitDoomGame) { window.parent.exitDoomGame(); }">← RETURN TO BROWSER</button>
+                    </div>
+
+                    <div class="high-score-bar">
+                        <span>BEST SCORE: <strong id="menu-high-score">0</strong></span>
+                        <span class="sep">|</span>
+                        <span>BEST KILLS: <strong id="menu-best-kills">0</strong></span>
+                        <span class="sep">|</span>
+                        <span>BEST TIME: <strong id="menu-best-time">--:--</strong></span>
+                    </div>
+
+                    <div class="offline-indicator">
+                        <span class="pulse-dot"></span> 100% OFFLINE SAFE &bull; ZERO NETWORK REQUESTS
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. HOW TO PLAY SCREEN -->
+            <div id="screen-how-to-play" class="ui-screen">
+                <div class="modal-box">
+                    <h2 class="modal-title">TACTICAL BRIEFING & CONTROLS</h2>
+                    
+                    <div class="controls-grid">
+                        <div class="control-item">
+                            <span class="key-badge">W A S D</span>
+                            <span class="desc">Move & Strafe</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">MOUSE</span>
+                            <span class="desc">Aim / Look & Wheel Cycle</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">LEFT CLICK</span>
+                            <span class="desc">Shoot Weapon</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">E / SPACE</span>
+                            <span class="desc">Interact / Open Doors</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">1 2 3 / Q</span>
+                            <span class="desc">Knife / AK-47 / Plasma</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">TAB</span>
+                            <span class="desc">Tactical Radar Minimap</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">M</span>
+                            <span class="desc">Toggle Audio Mute</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">[ / ]</span>
+                            <span class="desc">Volume Down / Up</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key-badge">ESC / P</span>
+                            <span class="desc">Pause Game &amp; Audio Settings</span>
+                        </div>
+                    </div>
+
+                    <div class="intel-section">
+                        <div class="intel-card">
+                            <h4 class="enemy-red">THREAT: CRAWLER DEMON</h4>
+                            <p>Fast quadruped fiend. Attacks physically with razor-sharp claw swipes (deals 25% damage per strike).</p>
+                        </div>
+                        <div class="intel-card">
+                            <h4 class="enemy-orange">THREAT: HELL IMP</h4>
+                            <p>Demonic physical slasher. Rushes in close quarters with lethal melee claws (deals 25% damage per strike).</p>
+                        </div>
+                        <div class="intel-card">
+                            <h4 class="enemy-gold">THREAT: CYBER-BRUTE BOSS</h4>
+                            <p>Towering armored demon. Deals devastating heavy attacks that slash your health in half (50% damage per strike)!</p>
+                        </div>
+                    </div>
+
+                    <button id="btn-back-how-to-play" class="btn-retro btn-back">RETURN TO MENU</button>
+                </div>
+            </div>
+
+            <!-- 3. SETTINGS SCREEN -->
+            <div id="screen-settings" class="ui-screen">
+                <div class="modal-box settings-modal-box">
+                    <h2 class="modal-title">AUDIO &amp; SYSTEM SETTINGS</h2>
+
+                    <div class="settings-list">
+                        <!-- Master Volume -->
+                        <div class="setting-row">
+                            <label for="setting-master">MASTER VOLUME</label>
+                            <div class="setting-control-group">
+                                <input type="range" id="setting-master" min="0" max="1" step="0.05" value="1.0">
+                                <span id="val-master" class="setting-val">100%</span>
+                                <button id="btn-mute-master" class="btn-mute" title="Toggle Master Mute">🔊 MUTE</button>
+                            </div>
+                        </div>
+
+                        <!-- SFX & Demon Sound Volume -->
+                        <div class="setting-row">
+                            <label for="setting-sound">SFX &amp; DEMONS</label>
+                            <div class="setting-control-group">
+                                <input type="range" id="setting-sound" min="0" max="1" step="0.05" value="0.8">
+                                <span id="val-sound" class="setting-val">80%</span>
+                                <button id="btn-mute-sfx" class="btn-mute" title="Toggle SFX Mute">🔊 MUTE</button>
+                            </div>
+                        </div>
+
+                        <!-- Procedural OST Volume -->
+                        <div class="setting-row">
+                            <label for="setting-music">PROCEDURAL OST</label>
+                            <div class="setting-control-group">
+                                <input type="range" id="setting-music" min="0" max="1" step="0.05" value="0.5">
+                                <span id="val-music" class="setting-val">50%</span>
+                                <button id="btn-mute-music" class="btn-mute" title="Toggle Music Mute">🎵 MUTE</button>
+                            </div>
+                        </div>
+
+                        <!-- Mouse Sensitivity -->
+                        <div class="setting-row">
+                            <label for="setting-sens">MOUSE SENSITIVITY</label>
+                            <div class="setting-control-group">
+                                <input type="range" id="setting-sens" min="0.2" max="3.0" step="0.1" value="1.0">
+                                <span id="val-sens" class="setting-val">1.0x</span>
+                            </div>
+                        </div>
+
+                        <!-- Retro CRT Filter -->
+                        <div class="setting-row">
+                            <label for="setting-crt">RETRO CRT SCANLINES</label>
+                            <div class="setting-control-group">
+                                <input type="checkbox" id="setting-crt" checked>
+                                <span id="val-crt" class="setting-val">ENABLED</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-hint">
+                        <span>💡 Quick Keys: <strong>M</strong> (Mute All) &bull; <strong>[</strong> / <strong>]</strong> (Volume Down / Up)</span>
+                    </div>
+
+                    <button id="btn-save-settings" class="btn-retro btn-back" onclick="window.mainUI && window.mainUI.closeSettings()">APPLY &amp; RETURN</button>
+                </div>
+            </div>
+
+            <!-- 4. CREDITS SCREEN -->
+            <div id="screen-credits" class="ui-screen">
+                <div class="modal-box">
+                    <h2 class="modal-title">AGENTIC BROWSER INTEGRATION</h2>
+                    <div class="credits-body">
+                        <p><strong>OFFLINE DOOM</strong> is a 100% self-contained, offline raycasting game engine built natively for the <strong>Agentic Browser</strong> project.</p>
+                        <p class="tech-highlight">&bull; Zero runtime network requests<br>&bull; Zero CDN scripts or Google Fonts<br>&bull; Procedural Web Audio API sound synthesizer<br>&bull; Procedural Canvas pixel textures and sprites</p>
+                        <p>Launch Programmatically: <code>window.startOfflineGame()</code></p>
+                    </div>
+                    <button id="btn-back-credits" class="btn-retro btn-back" onclick="window.mainUI && window.mainUI.showScreen('main-menu')">RETURN TO MENU</button>
+                </div>
+            </div>
+
+            <!-- 5. PAUSE SCREEN -->
+            <div id="screen-pause" class="ui-screen">
+                <div class="modal-box pause-box">
+                    <h2 class="modal-title pulse-text">GAME PAUSED</h2>
+                    <div class="menu-buttons">
+                        <button id="btn-resume" class="btn-retro btn-primary" onclick="window.game && window.game.resumeGame()">RESUME MISSION</button>
+                        <button id="btn-settings-pause" class="btn-retro" onclick="window.mainUI && window.mainUI.openSettings('pause')">AUDIO &amp; SETTINGS</button>
+                        <button id="btn-restart-pause" class="btn-retro" onclick="window.game && window.game.restartGame()">RESTART LEVEL</button>
+                        <button id="btn-menu-pause" class="btn-retro" onclick="window.game && window.game.goToMenu()">EXIT TO MENU</button>
+                        <button id="btn-pause-return-browser" class="btn-retro btn-return-browser" onclick="if(window.parent && window.parent.exitDoomGame) { window.parent.exitDoomGame(); }">← RETURN TO BROWSER</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. GAME OVER SCREEN -->
+            <div id="screen-gameover" class="ui-screen">
+                <div class="modal-box death-box">
+                    <h1 class="death-title">YOU DIED</h1>
+                    <div class="stats-summary">
+                        <div class="stat-box">
+                            <span class="label">FINAL SCORE</span>
+                            <span id="go-score" class="val">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="label">DEMONS SLAIN</span>
+                            <span id="go-kills" class="val">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="label">TIME SURVIVED</span>
+                            <span id="go-time" class="val">0s</span>
+                        </div>
+                    </div>
+                    <div id="go-new-high" class="new-record-tag">&star; NEW HIGH SCORE! &star;</div>
+                    <div class="menu-buttons">
+                        <button id="btn-retry" class="btn-retro btn-primary">TRY AGAIN</button>
+                        <button id="btn-menu-go" class="btn-retro">MAIN MENU</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7. VICTORY SCREEN -->
+            <div id="screen-victory" class="ui-screen">
+                <div class="modal-box victory-box">
+                    <h1 class="victory-title">MISSION COMPLETE</h1>
+                    <p class="victory-sub">YOU SURVIVED &amp; RETURNED HOME &bull; DEMONIC INVASION DESTROYED</p>
+                    <div class="stats-summary">
+                        <div class="stat-box">
+                            <span class="label">FINAL SCORE</span>
+                            <span id="vic-score" class="val">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="label">DEMONS SLAIN</span>
+                            <span id="vic-kills" class="val">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="label">CLEAR TIME</span>
+                            <span id="vic-time" class="val">0s</span>
+                        </div>
+                    </div>
+                    <div id="vic-new-high" class="new-record-tag">&star; NEW RECORD ACHIEVED! &star;</div>
+                    <div class="menu-buttons">
+                        <button id="btn-play-again" class="btn-retro btn-primary">PLAY AGAIN</button>
+                        <button id="btn-menu-vic" class="btn-retro">MAIN MENU</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Offline Game JavaScript Modules (Zero CDNs, Zero External Dependencies) -->
+    <script src="js/storage.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/assets.js"></script>
+    <script src="js/collision.js"></script>
+    <script src="maps/level1.js"></script>
+    <script src="maps/level2.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/weapon.js"></script>
+    <script src="js/enemy.js"></script>
+    <script src="js/enemyAI.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/hud.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
