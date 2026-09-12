@@ -15,3 +15,13 @@ if (fs.existsSync(srcHtml)) {
 } else {
   console.warn(`[copy-assets] Warning: ${srcHtml} does not exist.`);
 }
+
+const srcDoom = path.join(__dirname, '../apps/desktop-browser/src/doom');
+const distDoom = path.join(distDir, 'doom');
+
+if (fs.existsSync(srcDoom)) {
+  fs.cpSync(srcDoom, distDoom, { recursive: true });
+  console.log(`[copy-assets] Successfully copied DOOM assets to ${distDoom}`);
+} else {
+  console.warn(`[copy-assets] Warning: ${srcDoom} does not exist.`);
+}

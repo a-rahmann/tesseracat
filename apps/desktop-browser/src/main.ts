@@ -219,6 +219,7 @@ if (!gotTheLock) {
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
     }
   });
@@ -275,6 +276,13 @@ function createWindow() {
       contextIsolation: true,
       webviewTag: true,
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 
   const htmlCandidates = [
